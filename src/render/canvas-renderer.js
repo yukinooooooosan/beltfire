@@ -1,5 +1,6 @@
 import { DIRS, GRID, TIMING } from "../content/mission-01.js";
 import { buildBeltsFromPath } from "../core/construction.js";
+import { FAILURE_TIMING } from "../core/failure.js";
 import { inBounds, incomingBeltDirections, key } from "../core/grid.js";
 
 export function createCanvasRenderer({ canvas, boardWrap }) {
@@ -292,21 +293,29 @@ export function createCanvasRenderer({ canvas, boardWrap }) {
     context.save();
     context.translate(center.x, center.y);
     context.globalAlpha = preview ? 0.55 : 1;
-    if (state === "burning") {
-      context.shadowColor = "rgba(255,73,30,0.9)";
+    if (state === "failing") {
+      context.shadowColor = belt.failureType === "electricity"
+        ? "rgba(255,220,99,0.9)"
+        : "rgba(255,73,30,0.9)";
       context.shadowBlur = size * 0.4;
     }
 
     roundedRect(context, -size * 0.43, -size * 0.43, size * 0.86, size * 0.86, size * 0.11);
-    context.fillStyle = state === "ash" ? "#17191d" : state === "burning" ? "#5f251c" : "#303944";
+    context.fillStyle = state === "broken"
+      ? "#17191d"
+      : state === "failing" ? belt.failureType === "electricity" ? "#514b20" : "#5f251c" : "#303944";
     context.fill();
-    context.strokeStyle = state === "ash" ? "#454039" : state === "burning" ? "#ff6842" : "#657180";
+    context.strokeStyle = state === "broken"
+      ? "#454039"
+      : state === "failing" ? belt.failureType === "electricity" ? "#ffdc63" : "#ff6842" : "#657180";
     context.lineWidth = Math.max(1.2, size * 0.045);
     context.stroke();
     context.shadowBlur = 0;
 
     const connections = beltConnections(belt, preview);
-    context.strokeStyle = state === "ash" ? "#2b2b29" : state === "burning" ? "#d9482f" : "#151a21";
+    context.strokeStyle = state === "broken"
+      ? "#2b2b29"
+      : state === "failing" ? belt.failureType === "electricity" ? "#765f19" : "#d9482f" : "#151a21";
     context.lineWidth = size * 0.38;
     context.lineCap = "butt";
     for (const dir of connections) {
@@ -317,14 +326,16 @@ export function createCanvasRenderer({ canvas, boardWrap }) {
       context.stroke();
     }
 
-    context.fillStyle = state === "ash" ? "#34332f" : state === "burning" ? "#ff6842" : "#232b34";
+    context.fillStyle = state === "broken"
+      ? "#34332f"
+      : state === "failing" ? belt.failureType === "electricity" ? "#ffdc63" : "#ff6842" : "#232b34";
     context.beginPath();
     context.arc(0, 0, size * 0.21, 0, Math.PI * 2);
     context.fill();
 
     if (state === "normal" || preview) {
       drawBeltArrow(belt.outDir, size);
-    } else if (state === "ash") {
+    } else if (state === "broken") {
       context.globalAlpha = 0.92;
       context.font = `${size * 0.52}px sans-serif`;
       context.textAlign = "center";
@@ -335,11 +346,14 @@ export function createCanvasRenderer({ canvas, boardWrap }) {
       context.shadowBlur = 0;
     }
 
-    if (state === "burning") {
+    if (state === "failing") {
       context.font = `${size * 0.56}px sans-serif`;
       context.textAlign = "center";
       context.textBaseline = "middle";
-      context.fillText("🔥", 0, -size * 0.13 + Math.sin(performance.now() / 80) * 2);
+      const failureIcon = belt.failureType === "electricity"
+        ? "⚡"
+        : belt.failureType === "water" ? "💧" : "🔥";
+      context.fillText(failureIcon, 0, -size * 0.13 + Math.sin(performance.now() / 80) * 2);
     }
     context.restore();
   }
@@ -369,15 +383,16 @@ export function createCanvasRenderer({ canvas, boardWrap }) {
       x: from.x + (to.x - from.x) * progress,
       y: from.y + (to.y - from.y) * progress,
     };
-    const warning = Math.min(1, fire.stalledMs / TIMING.warningMs);
+    const warning = Math.min(1, fire.stalledMs / FAILURE_TIMING.warningMs);
     const pulse = 1 + Math.sin(performance.now() / 95) * 0.06 * warning;
     const ejectScale = fire.ejecting ? 0.64 + progress * 0.36 : 1;
 
     context.save();
     context.translate(center.x, center.y);
     context.globalAlpha = fire.ejecting ? 0.58 + progress * 0.42 : 1;
-    if (fire.stalledMs >= TIMING.warningMs) {
-      const danger = (fire.stalledMs - TIMING.warningMs) / (TIMING.igniteMs - TIMING.warningMs);
+    if (fire.stalledMs >= FAILURE_TIMING.warningMs) {
+      const danger = (fire.stalledMs - FAILURE_TIMING.warningMs)
+        / (FAILURE_TIMING.triggerMs - FAILURE_TIMING.warningMs);
       context.strokeStyle = `rgba(255, 66, 42, ${0.35 + danger * 0.55})`;
       context.lineWidth = Math.max(2, layout.cell * 0.07);
       context.beginPath();

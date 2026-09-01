@@ -26,7 +26,8 @@ export function buildBeltsFromPath(path, sourcePort, targetFurnace) {
       previewInDir,
       outDir,
       state: "normal",
-      burnMs: 0,
+      failureType: null,
+      failureMs: 0,
       spreadMs: 0,
     };
   });
@@ -38,9 +39,9 @@ export function isPathCellAvailable(cell, belts, furnace, generator, currentPath
   return !currentPath.some((item) => sameCell(item, cell));
 }
 
-export function connectedAshComponent(start, belts) {
+export function connectedBrokenComponent(start, belts) {
   const startBelt = belts.get(key(start.x, start.y));
-  if (!startBelt || startBelt.state !== "ash") return [];
+  if (!startBelt || startBelt.state !== "broken") return [];
   const found = [];
   const queue = [startBelt];
   const visited = new Set();
@@ -55,7 +56,7 @@ export function connectedAshComponent(start, belts) {
     for (const dir of Object.keys(DIRS)) {
       const delta = DIRS[dir];
       const neighbor = belts.get(key(current.x + delta.x, current.y + delta.y));
-      if (neighbor?.state === "ash" && beltIsConnected(current, neighbor)) queue.push(neighbor);
+      if (neighbor?.state === "broken" && beltIsConnected(current, neighbor)) queue.push(neighbor);
     }
   }
   return found;

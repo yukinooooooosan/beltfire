@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { DIRS, GRID, TIMING } from "../content/mission-01.js";
 import { buildBeltsFromPath } from "../core/construction.js";
+import { FAILURE_TIMING } from "../core/failure.js";
 import { inBounds, incomingBeltDirections, key } from "../core/grid.js";
 
 const COLORS = {
@@ -307,29 +308,29 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
     const size = layout.cell;
     const container = scene.add.container(center.x, center.y).setDepth(66);
     const graphics = scene.add.graphics();
-    const isAsh = kind === "ash";
+    const isBroken = kind === "broken";
 
-    graphics.fillStyle(isAsh ? COLORS.ash : COLORS.belt, 1);
+    graphics.fillStyle(isBroken ? COLORS.ash : COLORS.belt, 1);
     graphics.fillRoundedRect(-size * 0.43, -size * 0.43, size * 0.86, size * 0.86, size * 0.11);
     graphics.lineStyle(
       Math.max(1.2, size * 0.045),
-      isAsh ? COLORS.ashEdge : COLORS.beltEdge,
+      isBroken ? COLORS.ashEdge : COLORS.beltEdge,
       1,
     );
     graphics.strokeRoundedRect(-size * 0.43, -size * 0.43, size * 0.86, size * 0.86, size * 0.11);
 
     const direction = DIRS[belt.outDir] || DIRS.U;
-    graphics.lineStyle(size * 0.38, isAsh ? 0x2b2b29 : COLORS.beltTrack, 1);
+    graphics.lineStyle(size * 0.38, isBroken ? 0x2b2b29 : COLORS.beltTrack, 1);
     graphics.lineBetween(
       -direction.x * size * 0.45,
       -direction.y * size * 0.45,
       direction.x * size * 0.45,
       direction.y * size * 0.45,
     );
-    graphics.fillStyle(isAsh ? 0x34332f : 0x232b34, 1);
+    graphics.fillStyle(isBroken ? 0x34332f : 0x232b34, 1);
     graphics.fillCircle(0, 0, size * 0.21);
 
-    if (!isAsh) {
+    if (!isBroken) {
       drawDirectionArrow(graphics, { x: 0, y: 0 }, belt.outDir, size);
       graphics.fillStyle(0xaab4bf, 0.8);
       graphics.fillCircle(-size * 0.29, -size * 0.29, size * 0.035);
@@ -412,12 +413,12 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
   }
 
   function playRemoveEffect(payload) {
-    const kind = payload.kind === "ash" ? "ash" : "normal";
+    const kind = payload.kind === "broken" ? "broken" : "normal";
     const belts = payload.belts || [];
     if (!belts.length) return;
     const origin = payload.origin || belts[0];
     const ghosts = belts.map((belt) => createBeltGhost(belt, kind));
-    const interval = kind === "ash" && ghosts.length > 1
+    const interval = kind === "broken" && ghosts.length > 1
       ? Math.min(48, 360 / (ghosts.length - 1))
       : 0;
 
@@ -459,18 +460,25 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
     const size = layout.cell;
     const beltState = belt.state || "normal";
     const alpha = preview ? 0.52 : 1;
-    const fill = beltState === "ash"
+    const fill = beltState === "broken"
       ? COLORS.ash
-      : beltState === "burning" ? COLORS.burning : COLORS.belt;
-    const edge = beltState === "ash"
+      : beltState === "failing"
+        ? belt.failureType === "electricity" ? 0x514b20 : COLORS.burning
+        : COLORS.belt;
+    const edge = beltState === "broken"
       ? COLORS.ashEdge
-      : beltState === "burning" ? COLORS.burningEdge : COLORS.beltEdge;
-    const track = beltState === "ash"
+      : beltState === "failing"
+        ? belt.failureType === "electricity" ? 0xffdc63 : COLORS.burningEdge
+        : COLORS.beltEdge;
+    const track = beltState === "broken"
       ? 0x2b2b29
-      : beltState === "burning" ? 0xd9482f : COLORS.beltTrack;
+      : beltState === "failing"
+        ? belt.failureType === "electricity" ? 0x765f19 : 0xd9482f
+        : COLORS.beltTrack;
 
-    if (beltState === "burning") {
-      graphics.fillStyle(COLORS.danger, 0.09 + Math.sin(visualTime / 95) * 0.025);
+    if (beltState === "failing") {
+      const glow = belt.failureType === "electricity" ? 0xffdc63 : COLORS.danger;
+      graphics.fillStyle(glow, 0.09 + Math.sin(visualTime / 95) * 0.025);
       graphics.fillCircle(center.x, center.y, size * 0.54);
     }
     graphics.fillStyle(fill, alpha);
@@ -501,7 +509,11 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       );
     }
     graphics.fillStyle(
-      beltState === "ash" ? 0x34332f : beltState === "burning" ? COLORS.burningEdge : 0x232b34,
+      beltState === "broken"
+        ? 0x34332f
+        : beltState === "failing"
+          ? belt.failureType === "electricity" ? 0xffdc63 : COLORS.burningEdge
+          : 0x232b34,
       alpha,
     );
     graphics.fillCircle(center.x, center.y, size * 0.21);
@@ -516,7 +528,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
     const activeKeys = new Set();
     for (const belt of state.belts.values()) {
       const beltKey = key(belt.x, belt.y);
-      if (belt.state !== "burning" && belt.state !== "ash") continue;
+      if (belt.state !== "failing" && belt.state !== "broken") continue;
       activeKeys.add(beltKey);
       let view = beltStateViews.get(beltKey);
       if (!view) {
@@ -526,10 +538,21 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         beltStateViews.set(beltKey, view);
       }
       const center = cellCenter(belt.x, belt.y);
-      view.setPosition(center.x, center.y - (belt.state === "burning" ? layout.cell * 0.11 : 0));
-      view.setText(belt.state === "burning" ? "🔥" : "💀");
-      view.setFontSize(Math.max(13, Math.round(layout.cell * (belt.state === "burning" ? 0.56 : 0.5))));
-      view.setAlpha(belt.state === "burning" ? 0.9 + Math.sin(visualTime / 80) * 0.1 : 0.92);
+      const failureIcon = belt.failureType === "electricity"
+        ? "⚡"
+        : belt.failureType === "water" ? "💧" : "🔥";
+      view.setPosition(center.x, center.y - (belt.state === "failing" ? layout.cell * 0.11 : 0));
+      view.setText(belt.state === "failing" ? failureIcon : "💀");
+      view.setFontSize(Math.max(13, Math.round(layout.cell * (belt.state === "failing" ? 0.56 : 0.5))));
+      view.setAlpha(belt.state === "failing" ? 0.9 + Math.sin(visualTime / 80) * 0.1 : 0.92);
+      if (belt.state === "failing") {
+        const shadow = belt.failureType === "electricity"
+          ? "#ffe06b"
+          : belt.failureType === "water" ? "#65e2ef" : "#ff5e14";
+        view.setShadow(0, 0, shadow, 10, true, true);
+      } else {
+        view.setShadow(0, 0, "#000000", 5, true, true);
+      }
     }
     for (const [beltKey, view] of beltStateViews) {
       if (activeKeys.has(beltKey)) continue;
@@ -1031,9 +1054,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       const to = cellCenter(resource.x, resource.y);
       const x = Phaser.Math.Linear(from.x, to.x, progress);
       const y = Phaser.Math.Linear(from.y, to.y, progress);
-      const warning = resourceType === "fire"
-        ? Math.min(1, resource.stalledMs / TIMING.warningMs)
-        : 0;
+      const warning = Math.min(1, resource.stalledMs / FAILURE_TIMING.warningMs);
       const pulse = 1 + Math.sin(visualTime / 95) * 0.06 * warning;
       const ejectScale = resource.ejecting ? 0.64 + progress * 0.36 : 1;
       const fontRatio = resourceType === "electricity" ? 0.48 : resourceType === "water" ? 0.5 : 0.56;
@@ -1043,15 +1064,19 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         .setScale(pulse * ejectScale)
         .setAlpha(resource.ejecting ? 0.58 + progress * 0.42 : 1);
 
-      if (resourceType === "fire" && resource.stalledMs >= TIMING.warningMs) {
+      if (resource.stalledMs >= FAILURE_TIMING.warningMs) {
         const danger = Phaser.Math.Clamp(
-          (resource.stalledMs - TIMING.warningMs) / (TIMING.igniteMs - TIMING.warningMs),
+          (resource.stalledMs - FAILURE_TIMING.warningMs)
+            / (FAILURE_TIMING.triggerMs - FAILURE_TIMING.warningMs),
           0,
           1,
         );
+        const warningColor = resourceType === "electricity"
+          ? 0xffdc63
+          : resourceType === "water" ? COLORS.cyan : COLORS.danger;
         warningGraphics.lineStyle(
           Math.max(2, layout.cell * 0.065),
-          COLORS.danger,
+          warningColor,
           0.35 + danger * 0.55,
         );
         warningGraphics.strokeCircle(
@@ -1059,6 +1084,15 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
           y,
           layout.cell * (0.34 + Math.sin(visualTime / 80) * 0.03),
         );
+      }
+
+      if (
+        resourceType === "electricity"
+        && resource.stalledMs >= FAILURE_TIMING.warningMs
+        && !paused
+        && visualTime - lastTrailAt > 72
+      ) {
+        sparkEmitter?.emitParticleAt(x, y, 2);
       }
 
       if (
@@ -1226,14 +1260,20 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       playTone(620, 105, { endFrequency: 880, volume: 0.028, type: "triangle" });
       return;
     }
-    if (type === "ignite") {
-      sparkEmitter?.explode(24, position.x, position.y);
-      smokeEmitter?.explode(9, position.x, position.y);
+    if (type === "failure-start" || type === "ignite") {
+      const failureType = payload.failureType || payload.belt?.failureType || "fire";
+      if (failureType === "water") waterEmitter?.explode(22, position.x, position.y);
+      else sparkEmitter?.explode(failureType === "electricity" ? 30 : 24, position.x, position.y);
+      smokeEmitter?.explode(failureType === "electricity" ? 5 : 9, position.x, position.y);
       camera.shake(180, 0.008);
-      playTone(145, 330, { endFrequency: 70, volume: 0.045, type: "sawtooth" });
+      if (failureType === "electricity") {
+        playTone(760, 210, { endFrequency: 120, volume: 0.04, type: "square" });
+      } else {
+        playTone(145, 330, { endFrequency: 70, volume: 0.045, type: "sawtooth" });
+      }
       return;
     }
-    if (type === "ash") {
+    if (type === "broken" || type === "ash") {
       smokeEmitter?.explode(7, position.x, position.y);
       playTone(110, 130, { endFrequency: 75, volume: 0.018, type: "triangle" });
       return;

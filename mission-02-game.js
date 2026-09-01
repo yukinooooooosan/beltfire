@@ -4,7 +4,11 @@ import {
   createMission02Machines,
   createPump,
 } from "./src/content/mission-02.js";
-import { buildBeltsFromPath } from "./src/core/construction.js";
+import {
+  buildBeltsFromPath,
+  connectedBrokenComponent,
+} from "./src/core/construction.js";
+import { MAX_CLEANUPS } from "./src/core/failure.js";
 import {
   inBounds,
   inRect,
@@ -22,6 +26,7 @@ import { createPhaserRenderer } from "./src/render/phaser-renderer.js";
 const canvas = document.querySelector("#game-canvas");
 const boardWrap = document.querySelector(".board-wrap");
 const deliveredCount = document.querySelector("#delivered-count");
+const cleanupCount = document.querySelector("#cleanup-count");
 const cleanupStat = document.querySelector(".stat-cleanup");
 const missionLabel = document.querySelector("#mission-label");
 const missionTitle = document.querySelector("#mission-title");
@@ -50,7 +55,9 @@ document.body.classList.add("water-mission");
 missionLabel.textContent = "MISSION 02";
 missionTitle.textContent = "貯水タンクへ水を届けよう";
 resourceStatIcon.textContent = "💧";
-cleanupStat.hidden = true;
+cleanupStat.hidden = false;
+cleanupStat.title = "故障ベルトの一括撤去可能数";
+cleanupCount.textContent = MAX_CLEANUPS;
 pumpTool.hidden = false;
 toolbar.classList.add("four-tools");
 clearResourceIcon.textContent = "💧";
@@ -64,6 +71,7 @@ const renderer = createPhaserRenderer({ canvas, boardWrap });
 let belts = new Map();
 let pumps = [];
 let pumpInventory = MISSION_02_MAX_PUMPS;
+let cleanupUses = MAX_CLEANUPS;
 let nextPumpId = 1;
 let tool = "pump";
 let drag = null;
@@ -282,6 +290,24 @@ function removeAt(cell) {
     showToast("撤去する設備やベルトがありません");
     return;
   }
+  if (belt.state === "failing") {
+    showToast("ショートが進行している間は撤去できません");
+    return;
+  }
+  if (belt.state === "broken") {
+    if (cleanupUses <= 0) {
+      showToast("一括撤去を使い切りました");
+      return;
+    }
+    const component = connectedBrokenComponent(cell, belts);
+    renderer.emitEvent("remove", { kind: "broken", belts: component, origin: cell });
+    for (const item of component) belts.delete(key(item.x, item.y));
+    cleanupUses -= 1;
+    cleanupCount.textContent = cleanupUses;
+    showToast(`故障ベルトを${component.length}個、一括撤去しました`);
+    updateGuide();
+    return;
+  }
   if (cellHasResourceOrTransit(simulation, cell.x, cell.y)) {
     showToast("資源が載っているベルトは撤去できません");
     return;
@@ -380,8 +406,16 @@ function pumpHasOutput(pump) {
 }
 
 function updateGuide() {
+  const hasFailing = [...belts.values()].some((belt) => belt.state === "failing");
+  const hasBroken = [...belts.values()].some((belt) => belt.state === "broken");
   const blockedPump = pumps.find((pump) => pump.storedElectricity > 0 && !pumpHasOutput(pump));
-  if (blockedPump) {
+  if (hasFailing) {
+    guideIcon.textContent = "⚡";
+    guideText.textContent = "滞留した電気がショートしています。最後は💀になります";
+  } else if (hasBroken) {
+    guideIcon.textContent = "🔨";
+    guideText.textContent = "撤去ツールで、つながった💀故障ベルトを一括撤去できます";
+  } else if (blockedPump) {
     guideIcon.textContent = "⚡";
     guideText.textContent = "ポンプが充電済みです。上側出口へ水用ベルトをつないでください";
   } else if (tool === "pump" && pumpInventory > 0) {
@@ -428,6 +462,8 @@ function completeMission() {
   clearDetail.textContent = pumps.length >= 2
     ? "2台のポンプで、貯水タンクを満たしました。"
     : "1台のポンプで、貯水タンクを満たしました。";
+  const used = MAX_CLEANUPS - cleanupUses;
+  if (used > 0) clearDetail.textContent += ` 一括撤去は${used}回使用しました。`;
   clearPanel.hidden = false;
 }
 
@@ -439,12 +475,14 @@ function resetMission() {
   tank.counterPulseMs = 0;
   generator.portFlashMs = [0, 0];
   pumpInventory = MISSION_02_MAX_PUMPS;
+  cleanupUses = MAX_CLEANUPS;
   nextPumpId = 1;
   drag = null;
   cleared = false;
   paused = true;
   autoPaused = false;
   deliveredCount.textContent = "0";
+  cleanupCount.textContent = MAX_CLEANUPS;
   clearPanel.hidden = true;
   renderer.emitEvent("reset");
   renderer.setPaused(true);
@@ -477,6 +515,17 @@ const simulationCallbacks = {
   onDelivery(machine, resource) {
     deliveredCount.textContent = Math.min(machine.received, machine.target);
     renderer.emitEvent("delivery", { tank: machine, resource });
+  },
+  onFailureStart(belt, failureType) {
+    renderer.emitEvent("failure-start", { belt, failureType });
+    showToast(failureType === "electricity"
+      ? "電気が滞留して、ベルトがショートしました！"
+      : "資源の滞留で、ベルトが故障しました！");
+    updateGuide();
+  },
+  onBroken(belt, failureType) {
+    renderer.emitEvent("broken", { belt, failureType });
+    updateGuide();
   },
   onComplete() {
     renderer.emitEvent("complete", { tank });

@@ -1,12 +1,10 @@
-import {
-  MAX_CLEANUPS,
-  createMissionMachines,
-} from "./src/content/mission-01.js";
+import { createMissionMachines } from "./src/content/mission-01.js";
 import {
   buildBeltsFromPath,
-  connectedAshComponent,
+  connectedBrokenComponent,
   isPathCellAvailable,
 } from "./src/core/construction.js";
+import { MAX_CLEANUPS } from "./src/core/failure.js";
 import {
   isDeviceCell,
   isFurnaceInput,
@@ -204,18 +202,18 @@ function removeAt(cell) {
     showToast("撤去するベルトがありません");
     return;
   }
-  if (belt.state === "burning") {
-    showToast("燃えている間は撤去できません");
+  if (belt.state === "failing") {
+    showToast("故障が進行している間は撤去できません");
     return;
   }
-  if (belt.state === "ash") {
+  if (belt.state === "broken") {
     if (cleanupUses <= 0) {
       showToast("一括撤去を使い切りました");
       return;
     }
-    const component = connectedAshComponent(cell, belts);
+    const component = connectedBrokenComponent(cell, belts);
     renderer.emitEvent("remove", {
-      kind: "ash",
+      kind: "broken",
       belts: component,
       origin: cell,
     });
@@ -223,7 +221,7 @@ function removeAt(cell) {
     hasBuiltBelt = belts.size > 0;
     cleanupUses -= 1;
     cleanupCount.textContent = cleanupUses;
-    showToast(`燃え滓を${component.length}個、一括撤去しました`);
+    showToast(`故障ベルトを${component.length}個、一括撤去しました`);
     updateGuide();
     return;
   }
@@ -242,14 +240,14 @@ function removeAt(cell) {
 }
 
 function updateGuide() {
-  const hasBurning = [...belts.values()].some((belt) => belt.state === "burning");
-  const hasAsh = [...belts.values()].some((belt) => belt.state === "ash");
-  if (hasBurning) {
+  const hasFailing = [...belts.values()].some((belt) => belt.state === "failing");
+  const hasBroken = [...belts.values()].some((belt) => belt.state === "broken");
+  if (hasFailing) {
     guideIcon.textContent = "🚨";
-    guideText.textContent = "燃えているベルトは、鎮火すると燃え滓になります";
-  } else if (hasAsh) {
+    guideText.textContent = "火による故障が進行しています。最後は💀になります";
+  } else if (hasBroken) {
     guideIcon.textContent = "🔨";
-    guideText.textContent = "撤去ツールで、つながった燃え滓を一括撤去できます";
+    guideText.textContent = "撤去ツールで、つながった💀故障ベルトを一括撤去できます";
   } else if (paused && hasBuiltBelt) {
     guideIcon.textContent = "▶️";
     guideText.textContent = "準備ができたら、右上の再生ボタンで工場を稼働";
@@ -346,13 +344,13 @@ const simulationCallbacks = {
     deliveredCount.textContent = Math.min(machine.received, machine.target);
     renderer.emitEvent("delivery", { furnace: machine, fire });
   },
-  onIgnite(belt) {
-    renderer.emitEvent("ignite", { belt });
+  onFailureStart(belt, failureType) {
+    renderer.emitEvent("failure-start", { belt, failureType });
     showToast("火が滞留して、ベルトに燃え移りました！");
     updateGuide();
   },
-  onAsh(belt) {
-    renderer.emitEvent("ash", { belt });
+  onBroken(belt, failureType) {
+    renderer.emitEvent("broken", { belt, failureType });
     updateGuide();
   },
   onComplete() {

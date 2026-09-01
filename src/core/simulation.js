@@ -1,5 +1,10 @@
 import { DIRS, TIMING } from "../content/mission-01.js";
-import { beltIsConnected, key } from "./grid.js";
+import {
+  removeResourcesOnFailedBelts,
+  triggerStalledFailures,
+  updateBeltFailures,
+} from "./failure.js";
+import { key } from "./grid.js";
 
 export function createSimulationState() {
   return {
@@ -36,6 +41,7 @@ function trySpawn(state, portIndex, belts, generator, onSpawn) {
   generator.portFlashMs[portIndex] = TIMING.ejectMs;
   const fire = {
     id: state.nextFireId,
+    type: "fire",
     x,
     y,
     prevX: x,
@@ -66,28 +72,6 @@ function furnaceAccepts(x, y, direction, furnace) {
   return direction === "U"
     && y === furnace.y + furnace.h
     && (x === furnace.x || x === furnace.x + 1);
-}
-
-function igniteBelt(state, x, y, belts, onIgnite) {
-  const belt = belts.get(key(x, y));
-  if (!belt || belt.state !== "normal") return;
-  belt.state = "burning";
-  belt.burnMs = 0;
-  belt.spreadMs = 0;
-  state.fires = state.fires.filter((fire) => fire.x !== x || fire.y !== y);
-  onIgnite?.(belt);
-}
-
-function igniteStalledFires(state, belts, onIgnite) {
-  const survivors = [];
-  for (const fire of state.fires) {
-    if (fire.stalledMs >= TIMING.igniteMs) {
-      igniteBelt(state, fire.x, fire.y, belts, onIgnite);
-    } else {
-      survivors.push(fire);
-    }
-  }
-  state.fires = survivors;
 }
 
 function moveFires(state, belts, furnace, callbacks) {
@@ -139,36 +123,8 @@ function moveFires(state, belts, furnace, callbacks) {
   }
 
   state.fires = state.fires.filter((_, index) => !deliveredIndexes.has(index));
-  igniteStalledFires(state, belts, callbacks.onIgnite);
+  state.fires = triggerStalledFailures(state.fires, belts, callbacks);
   if (furnace.received >= furnace.target) callbacks.onComplete?.();
-}
-
-function updateBurning(state, deltaMs, belts, callbacks) {
-  const burning = [...belts.values()].filter((belt) => belt.state === "burning");
-  const toIgnite = [];
-  const becameAsh = [];
-
-  for (const belt of burning) {
-    belt.burnMs += deltaMs;
-    belt.spreadMs += deltaMs;
-    if (belt.spreadMs >= TIMING.spreadMs) {
-      belt.spreadMs = 0;
-      for (const dir of Object.keys(DIRS)) {
-        const delta = DIRS[dir];
-        const neighbor = belts.get(key(belt.x + delta.x, belt.y + delta.y));
-        if (neighbor?.state === "normal" && beltIsConnected(belt, neighbor)) toIgnite.push(neighbor);
-      }
-    }
-    if (belt.burnMs >= TIMING.burnMs) {
-      belt.state = "ash";
-      belt.burnMs = 0;
-      belt.spreadMs = 0;
-      becameAsh.push(belt);
-    }
-  }
-
-  for (const belt of toIgnite) igniteBelt(state, belt.x, belt.y, belts, callbacks.onIgnite);
-  for (const belt of becameAsh) callbacks.onAsh?.(belt);
 }
 
 export function updateSimulation(state, deltaMs, options) {
@@ -190,5 +146,6 @@ export function updateSimulation(state, deltaMs, options) {
     state.movementAccumulator -= TIMING.stepMs;
     moveFires(state, belts, furnace, callbacks);
   }
-  updateBurning(state, deltaMs, belts, callbacks);
+  updateBeltFailures(deltaMs, belts, callbacks);
+  state.fires = removeResourcesOnFailedBelts(state.fires, belts);
 }

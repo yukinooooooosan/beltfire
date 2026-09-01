@@ -1,15 +1,10 @@
 export const GRID = { cols: 8, rows: 13 };
 export const TARGET = 10;
-export const MAX_CLEANUPS = 3;
 
 export const TIMING = {
   stepMs: 320,
   spawnMs: 1000,
   ejectMs: 420,
-  warningMs: 1900,
-  igniteMs: 3600,
-  burnMs: 1650,
-  spreadMs: 520,
 };
 
 export const DIRS = {

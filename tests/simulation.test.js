@@ -60,7 +60,7 @@ test("一本のベルトで火を10個納品し、Renderer用イベントを通�
   assert.equal(completed, 1);
 });
 
-test("行き止まりの火が着火し、接続ベルトが燃え滓になる", () => {
+test("行き止まりの火が故障を起こし、接続ベルトが💀になる", () => {
   const { furnace, generator } = createMissionMachines();
   const simulation = createSimulationState();
   const belts = beltMap(buildBeltsFromPath(
@@ -71,8 +71,8 @@ test("行き止まりの火が着火し、接続ベルトが燃え滓になる",
     1,
     null,
   ));
-  const ignited = [];
-  const ashes = [];
+  const started = [];
+  const broken = [];
 
   for (let elapsed = 0; elapsed < 18000; elapsed += 50) {
     updateSimulation(simulation, 50, {
@@ -80,19 +80,21 @@ test("行き止まりの火が着火し、接続ベルトが燃え滓になる",
       furnace,
       generator,
       callbacks: {
-        onIgnite(belt) {
-          ignited.push(key(belt.x, belt.y));
+        onFailureStart(belt, failureType) {
+          started.push({ key: key(belt.x, belt.y), failureType });
         },
-        onAsh(belt) {
-          ashes.push(key(belt.x, belt.y));
+        onBroken(belt, failureType) {
+          broken.push({ key: key(belt.x, belt.y), failureType });
         },
       },
     });
   }
 
-  assert.ok(ignited.length >= 1);
-  assert.equal(new Set(ashes).size, 2);
-  assert.ok([...belts.values()].every((belt) => belt.state === "ash"));
+  assert.ok(started.length >= 1);
+  assert.equal(new Set(broken.map((item) => item.key)).size, 2);
+  assert.ok(started.every((item) => item.failureType === "fire"));
+  assert.ok(broken.every((item) => item.failureType === "fire"));
+  assert.ok([...belts.values()].every((belt) => belt.state === "broken"));
 });
 
 test("ポンプが電気を水へ変換し、貯水タンクへ10個納品する", () => {
@@ -138,7 +140,7 @@ test("ポンプが電気を水へ変換し、貯水タンクへ10個納品する
   assert.ok(output >= 10);
 });
 
-test("水の出力ベルトがないポンプは電気を保持し、入力側を詰まらせる", () => {
+test("満杯のポンプ手前で滞留した電気がベルトを故障させる", () => {
   const { tank, generator } = createMission02Machines();
   const pump = createPump("blocked-pump", generator.x, 6);
   const belts = beltMap(buildBeltsFromPath(
@@ -150,6 +152,8 @@ test("水の出力ベルトがないポンプは電気を保持し、入力側�
     { x: pump.x, y: pump.y + pump.h - 1 },
   ));
   const simulation = createWaterSimulationState();
+  const started = [];
+  const broken = [];
 
   for (let elapsed = 0; elapsed < 12000; elapsed += 50) {
     updateWaterSimulation(simulation, 50, {
@@ -157,11 +161,53 @@ test("水の出力ベルトがないポンプは電気を保持し、入力側�
       generator,
       pumps: [pump],
       tank,
+      callbacks: {
+        onFailureStart(belt, failureType) {
+          started.push({ key: key(belt.x, belt.y), failureType });
+        },
+        onBroken(belt, failureType) {
+          broken.push({ key: key(belt.x, belt.y), failureType });
+        },
+      },
     });
   }
 
   assert.equal(pump.storedElectricity, 1);
   assert.equal(tank.received, 0);
-  assert.ok(simulation.resources.filter((resource) => resource.type === "electricity").length >= 1);
   assert.equal(simulation.resources.some((resource) => resource.type === "water"), false);
+  assert.ok(started.length >= 1);
+  assert.ok(broken.length >= 1);
+  assert.ok(started.every((item) => item.failureType === "electricity"));
+  assert.ok(broken.every((item) => item.failureType === "electricity"));
+  assert.ok([...belts.values()].every((belt) => belt.state === "broken"));
+});
+
+test("行き止まりで滞留した水も共通ルールでベルトを故障させる", () => {
+  const { tank, generator } = createMission02Machines();
+  const pump = createPump("water-blocked-pump", generator.x, 6);
+  pump.storedElectricity = 1;
+  const belts = beltMap(buildBeltsFromPath(
+    [{ x: pump.x, y: pump.y - 1 }],
+    0,
+    null,
+  ));
+  const simulation = createWaterSimulationState();
+  const failureTypes = [];
+
+  for (let elapsed = 0; elapsed < 9000; elapsed += 50) {
+    updateWaterSimulation(simulation, 50, {
+      belts,
+      generator,
+      pumps: [pump],
+      tank,
+      callbacks: {
+        onFailureStart(_belt, failureType) {
+          failureTypes.push(failureType);
+        },
+      },
+    });
+  }
+
+  assert.ok(failureTypes.includes("water"));
+  assert.equal([...belts.values()][0].state, "broken");
 });

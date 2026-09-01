@@ -1,5 +1,10 @@
 import { DIRS } from "../content/mission-01.js";
 import { MISSION_02_TIMING } from "../content/mission-02.js";
+import {
+  removeResourcesOnFailedBelts,
+  triggerStalledFailures,
+  updateBeltFailures,
+} from "./failure.js";
 import { key } from "./grid.js";
 
 export function createWaterSimulationState() {
@@ -188,6 +193,7 @@ function moveResources(state, belts, pumps, tank, callbacks) {
   }
 
   state.resources = state.resources.filter((_, index) => !consumedIndexes.has(index));
+  state.resources = triggerStalledFailures(state.resources, belts, callbacks);
   if (tank.received >= tank.target) callbacks.onComplete?.();
 }
 
@@ -216,4 +222,6 @@ export function updateWaterSimulation(state, deltaMs, options) {
     moveResources(state, belts, pumps, tank, callbacks);
     tryPumpOutputs(state, belts, pumps, callbacks);
   }
+  updateBeltFailures(deltaMs, belts, callbacks);
+  state.resources = removeResourcesOnFailedBelts(state.resources, belts);
 }
