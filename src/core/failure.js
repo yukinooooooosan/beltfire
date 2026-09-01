@@ -65,6 +65,27 @@ export function updateBeltFailures(deltaMs, belts, callbacks = {}) {
   for (const belt of becameBroken) callbacks.onBroken?.(belt, belt.failureType);
 }
 
+export function beginMachineFailure(machine, resource, callbacks = {}) {
+  if (!machine || machine.state !== "normal") return false;
+  machine.state = "failing";
+  machine.failureType = resource.type || "unknown";
+  machine.failureMs = 0;
+  machine.containedResourceType = machine.failureType;
+  callbacks.onMachineFailureStart?.(machine, resource);
+  return true;
+}
+
+export function updateMachineFailures(deltaMs, machines, callbacks = {}) {
+  for (const machine of machines) {
+    if (machine.state !== "failing") continue;
+    machine.failureMs += deltaMs;
+    if (machine.failureMs < FAILURE_TIMING.failingMs) continue;
+    machine.state = "broken";
+    machine.failureMs = 0;
+    callbacks.onMachineBroken?.(machine, machine.failureType);
+  }
+}
+
 export function removeResourcesOnFailedBelts(resources, belts) {
   return resources.filter((resource) => (
     belts.get(key(resource.x, resource.y))?.state === "normal"

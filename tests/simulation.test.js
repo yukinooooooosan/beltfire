@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 
 import { createMissionMachines } from "../src/content/mission-01.js";
 import { createMission02Machines, createPump } from "../src/content/mission-02.js";
-import { buildBeltsFromPath } from "../src/core/construction.js";
+import {
+  buildBeltsFromPath,
+  connectedBrokenNetwork,
+} from "../src/core/construction.js";
 import { key } from "../src/core/grid.js";
 import {
   createSimulationState,
@@ -210,4 +213,89 @@ test("行き止まりで滞留した水も共通ルールでベルトを故障�
 
   assert.ok(failureTypes.includes("water"));
   assert.equal([...belts.values()][0].state, "broken");
+});
+
+test("空のポンプは火も受け入れ、誤投入として💀故障する", () => {
+  const { tank, generator } = createMission02Machines();
+  const pump = createPump("wrong-input-pump", generator.x, 6);
+  const inputCell = { x: pump.x, y: pump.y + pump.h };
+  const belts = beltMap(buildBeltsFromPath(
+    [inputCell],
+    0,
+    { x: pump.x, y: pump.y + pump.h - 1 },
+  ));
+  const simulation = createWaterSimulationState();
+  simulation.resources.push({
+    id: simulation.nextResourceId,
+    type: "fire",
+    x: inputCell.x,
+    y: inputCell.y,
+    prevX: inputCell.x,
+    prevY: inputCell.y,
+    stalledMs: 0,
+    ejecting: false,
+    ejectProgress: 1,
+  });
+  simulation.nextResourceId += 1;
+  const machineEvents = [];
+
+  for (let elapsed = 0; elapsed < 3000; elapsed += 50) {
+    updateWaterSimulation(simulation, 50, {
+      belts,
+      generator,
+      pumps: [pump],
+      tank,
+      callbacks: {
+        onMachineFailureStart(machine, resource) {
+          machineEvents.push(`start:${machine.id}:${resource.type}`);
+        },
+        onMachineBroken(machine, failureType) {
+          machineEvents.push(`broken:${machine.id}:${failureType}`);
+        },
+      },
+    });
+  }
+
+  assert.equal(simulation.resources.length, 0);
+  assert.equal(pump.storedElectricity, 0);
+  assert.equal(pump.failureType, "fire");
+  assert.equal(pump.containedResourceType, "fire");
+  assert.equal(pump.state, "broken");
+  assert.deepEqual(machineEvents, [
+    "start:wrong-input-pump:fire",
+    "broken:wrong-input-pump:fire",
+  ]);
+  assert.equal([...belts.values()][0].state, "normal");
+});
+
+test("💀ポンプが入出力側の💀ベルトを一つの故障ネットワークにまとめる", () => {
+  const pump = createPump("network-pump", 3, 6);
+  pump.state = "broken";
+  pump.failureType = "fire";
+  const outputBelt = buildBeltsFromPath(
+    [{ x: pump.x, y: pump.y - 1 }],
+    0,
+    null,
+  )[0];
+  const inputBelt = buildBeltsFromPath(
+    [{ x: pump.x, y: pump.y + pump.h }],
+    0,
+    { x: pump.x, y: pump.y + pump.h - 1 },
+  )[0];
+  outputBelt.state = "broken";
+  inputBelt.state = "broken";
+  const belts = beltMap([outputBelt, inputBelt]);
+
+  const network = connectedBrokenNetwork(
+    { x: pump.x, y: pump.y },
+    belts,
+    [pump],
+  );
+
+  assert.deepEqual(network.devices.map((device) => device.id), ["network-pump"]);
+  assert.equal(network.belts.length, 2);
+  assert.deepEqual(
+    new Set(network.belts.map((belt) => key(belt.x, belt.y))),
+    new Set([key(outputBelt.x, outputBelt.y), key(inputBelt.x, inputBelt.y)]),
+  );
 });

@@ -6,7 +6,7 @@ import {
 } from "./src/content/mission-02.js";
 import {
   buildBeltsFromPath,
-  connectedBrokenComponent,
+  connectedBrokenNetwork,
 } from "./src/core/construction.js";
 import { MAX_CLEANUPS } from "./src/core/failure.js";
 import {
@@ -97,7 +97,9 @@ function isGeneratorOutput(cell) {
 }
 
 function pumpOutputAt(cell) {
-  return pumps.find((pump) => cell.x === pump.x && cell.y === pump.y) || null;
+  return pumps.find((pump) => (
+    pump.state === "normal" && cell.x === pump.x && cell.y === pump.y
+  )) || null;
 }
 
 function inputTargetAt(cell) {
@@ -112,7 +114,9 @@ function inputTargetAt(cell) {
     };
   }
   const pump = pumps.find((item) => (
-    cell.x === item.x && cell.y === item.y + item.h - 1
+    item.state === "normal"
+    && cell.x === item.x
+    && cell.y === item.y + item.h - 1
   ));
   if (!pump) return null;
   return {
@@ -128,7 +132,9 @@ function beltFeedsDevice(belt) {
     belt.y === tank.y + tank.h
     && (belt.x === tank.x || belt.x === tank.x + 1)
   ) return true;
-  return pumps.some((pump) => belt.x === pump.x && belt.y === pump.y + pump.h);
+  return pumps.some((pump) => (
+    pump.state === "normal" && belt.x === pump.x && belt.y === pump.y + pump.h
+  ));
 }
 
 function isTerminalBelt(belt) {
@@ -271,6 +277,14 @@ function placePump(cell) {
 function removeAt(cell) {
   const pump = pumps.find((item) => inRect(cell, item));
   if (pump) {
+    if (pump.state === "failing") {
+      showToast("故障が進行している間は撤去できません");
+      return;
+    }
+    if (pump.state === "broken") {
+      removeBrokenNetwork(cell);
+      return;
+    }
     renderer.emitEvent("machine-remove", { machine: pump });
     pumps = pumps.filter((item) => item.id !== pump.id);
     pumpInventory = Math.min(MISSION_02_MAX_PUMPS, pumpInventory + 1);
@@ -295,17 +309,7 @@ function removeAt(cell) {
     return;
   }
   if (belt.state === "broken") {
-    if (cleanupUses <= 0) {
-      showToast("一括撤去を使い切りました");
-      return;
-    }
-    const component = connectedBrokenComponent(cell, belts);
-    renderer.emitEvent("remove", { kind: "broken", belts: component, origin: cell });
-    for (const item of component) belts.delete(key(item.x, item.y));
-    cleanupUses -= 1;
-    cleanupCount.textContent = cleanupUses;
-    showToast(`故障ベルトを${component.length}個、一括撤去しました`);
-    updateGuide();
+    removeBrokenNetwork(cell);
     return;
   }
   if (cellHasResourceOrTransit(simulation, cell.x, cell.y)) {
@@ -315,6 +319,36 @@ function removeAt(cell) {
   renderer.emitEvent("remove", { kind: "normal", belts: [belt], origin: cell });
   belts.delete(key(cell.x, cell.y));
   showToast("ベルトを撤去しました");
+  updateGuide();
+}
+
+function removeBrokenNetwork(cell) {
+  if (cleanupUses <= 0) {
+    showToast("一括撤去を使い切りました");
+    return;
+  }
+  const network = connectedBrokenNetwork(cell, belts, pumps);
+  if (!network.belts.length && !network.devices.length) return;
+  renderer.emitEvent("remove", {
+    kind: "broken",
+    belts: network.belts,
+    origin: network.belts[0] || cell,
+  });
+  for (const belt of network.belts) belts.delete(key(belt.x, belt.y));
+  for (const machine of network.devices) {
+    renderer.emitEvent("machine-remove", { machine });
+  }
+  const removedDeviceIds = new Set(network.devices.map((machine) => machine.id));
+  pumps = pumps.filter((pump) => !removedDeviceIds.has(pump.id));
+  pumpInventory = Math.min(
+    MISSION_02_MAX_PUMPS,
+    pumpInventory + network.devices.length,
+  );
+  cleanupUses -= 1;
+  cleanupCount.textContent = cleanupUses;
+  updatePumpPalette();
+  const deviceText = network.devices.length ? `設備${network.devices.length}台と` : "";
+  showToast(`${deviceText}故障ベルト${network.belts.length}個を一括撤去しました`);
   updateGuide();
 }
 
@@ -402,14 +436,23 @@ function setTool(nextTool) {
 }
 
 function pumpHasOutput(pump) {
-  return belts.get(key(pump.x, pump.y - 1))?.state === "normal";
+  return pump.state === "normal"
+    && belts.get(key(pump.x, pump.y - 1))?.state === "normal";
 }
 
 function updateGuide() {
   const hasFailing = [...belts.values()].some((belt) => belt.state === "failing");
   const hasBroken = [...belts.values()].some((belt) => belt.state === "broken");
+  const hasFailingMachine = pumps.some((pump) => pump.state === "failing");
+  const hasBrokenMachine = pumps.some((pump) => pump.state === "broken");
   const blockedPump = pumps.find((pump) => pump.storedElectricity > 0 && !pumpHasOutput(pump));
-  if (hasFailing) {
+  if (hasFailingMachine) {
+    guideIcon.textContent = "🚨";
+    guideText.textContent = "誤投入された素材でポンプが故障しています";
+  } else if (hasBrokenMachine) {
+    guideIcon.textContent = "🔨";
+    guideText.textContent = "💀ポンプと接続された💀ベルトをまとめて撤去できます";
+  } else if (hasFailing) {
     guideIcon.textContent = "⚡";
     guideText.textContent = "滞留した電気がショートしています。最後は💀になります";
   } else if (hasBroken) {
@@ -525,6 +568,19 @@ const simulationCallbacks = {
   },
   onBroken(belt, failureType) {
     renderer.emitEvent("broken", { belt, failureType });
+    updateGuide();
+  },
+  onMachineFailureStart(machine, resource) {
+    renderer.emitEvent("machine-failure-start", {
+      machine,
+      resource,
+      failureType: resource.type,
+    });
+    showToast(`${resource.type === "fire" ? "火" : "異物"}を取り込み、ポンプが故障しました！`);
+    updateGuide();
+  },
+  onMachineBroken(machine, failureType) {
+    renderer.emitEvent("machine-broken", { machine, failureType });
     updateGuide();
   },
   onComplete() {

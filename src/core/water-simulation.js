@@ -1,9 +1,11 @@
 import { DIRS } from "../content/mission-01.js";
 import { MISSION_02_TIMING } from "../content/mission-02.js";
 import {
+  beginMachineFailure,
   removeResourcesOnFailedBelts,
   triggerStalledFailures,
   updateBeltFailures,
+  updateMachineFailures,
 } from "./failure.js";
 import { key } from "./grid.js";
 
@@ -98,6 +100,7 @@ function tankAccepts(x, y, direction, tank) {
 
 function tryPumpOutputs(state, belts, pumps, callbacks) {
   for (const pump of pumps) {
+    if (pump.state !== "normal") continue;
     if (pump.storedElectricity <= 0) continue;
     const x = pump.x;
     const y = pump.y - 1;
@@ -141,12 +144,17 @@ function moveResources(state, belts, pumps, tank, callbacks) {
 
     const pump = pumpAcceptingAt(resource.x, resource.y, belt.outDir, pumps);
     if (pump) {
-      if (resource.type === "electricity" && pump.storedElectricity < pump.capacity) {
+      if (pump.state === "normal" && pump.storedElectricity < pump.capacity) {
         occupied.delete(key(resource.x, resource.y));
         consumedIndexes.add(index);
-        pump.storedElectricity += 1;
-        pump.chargePulseMs = 320;
-        callbacks.onPumpCharge?.(pump, resource);
+        if (resource.type === "electricity") {
+          pump.storedElectricity += 1;
+          pump.chargePulseMs = 320;
+          callbacks.onPumpCharge?.(pump, resource);
+        } else {
+          pump.storedElectricity = 0;
+          beginMachineFailure(pump, resource, callbacks);
+        }
       } else {
         resource.prevX = resource.x;
         resource.prevY = resource.y;
@@ -205,6 +213,7 @@ export function updateWaterSimulation(state, deltaMs, options) {
     pump.chargePulseMs = Math.max(0, pump.chargePulseMs - deltaMs);
     pump.outputPulseMs = Math.max(0, pump.outputPulseMs - deltaMs);
   }
+  updateMachineFailures(deltaMs, pumps, callbacks);
   for (let port = 0; port < 2; port += 1) {
     generator.portFlashMs[port] = Math.max(0, generator.portFlashMs[port] - deltaMs);
     state.spawnAccumulator[port] += deltaMs;

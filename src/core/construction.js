@@ -40,24 +40,65 @@ export function isPathCellAvailable(cell, belts, furnace, generator, currentPath
 }
 
 export function connectedBrokenComponent(start, belts) {
+  return connectedBrokenNetwork(start, belts).belts;
+}
+
+function deviceContainsCell(device, cell) {
+  return cell.x >= device.x
+    && cell.x < device.x + device.w
+    && cell.y >= device.y
+    && cell.y < device.y + device.h;
+}
+
+export function connectedBrokenNetwork(start, belts, devices = []) {
   const startBelt = belts.get(key(start.x, start.y));
-  if (!startBelt || startBelt.state !== "broken") return [];
-  const found = [];
-  const queue = [startBelt];
+  const startDevice = devices.find((device) => (
+    device.state === "broken" && deviceContainsCell(device, start)
+  ));
+  if (startBelt?.state !== "broken" && !startDevice) {
+    return { belts: [], devices: [] };
+  }
+  const foundBelts = [];
+  const foundDevices = [];
+  const queue = startDevice
+    ? [{ kind: "device", value: startDevice }]
+    : [{ kind: "belt", value: startBelt }];
   const visited = new Set();
 
   while (queue.length) {
     const current = queue.shift();
-    const currentKey = key(current.x, current.y);
-    if (visited.has(currentKey)) continue;
-    visited.add(currentKey);
-    found.push(current);
+    const nodeKey = current.kind === "belt"
+      ? `belt:${key(current.value.x, current.value.y)}`
+      : `device:${current.value.id}`;
+    if (visited.has(nodeKey)) continue;
+    visited.add(nodeKey);
 
-    for (const dir of Object.keys(DIRS)) {
-      const delta = DIRS[dir];
-      const neighbor = belts.get(key(current.x + delta.x, current.y + delta.y));
-      if (neighbor?.state === "broken" && beltIsConnected(current, neighbor)) queue.push(neighbor);
+    if (current.kind === "belt") {
+      const belt = current.value;
+      foundBelts.push(belt);
+      for (const dir of Object.keys(DIRS)) {
+        const delta = DIRS[dir];
+        const neighbor = belts.get(key(belt.x + delta.x, belt.y + delta.y));
+        if (neighbor?.state === "broken" && beltIsConnected(belt, neighbor)) {
+          queue.push({ kind: "belt", value: neighbor });
+        }
+      }
+      for (const device of devices) {
+        if (
+          device.state === "broken"
+          && device.connectionCells?.some((cell) => cell.x === belt.x && cell.y === belt.y)
+        ) {
+          queue.push({ kind: "device", value: device });
+        }
+      }
+    } else {
+      const device = current.value;
+      foundDevices.push(device);
+      for (const cell of device.connectionCells || []) {
+        const belt = belts.get(key(cell.x, cell.y));
+        if (belt?.state === "broken") queue.push({ kind: "belt", value: belt });
+      }
     }
   }
-  return found;
+  return { belts: foundBelts, devices: foundDevices };
 }

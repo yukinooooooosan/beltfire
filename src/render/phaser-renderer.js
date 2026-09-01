@@ -944,8 +944,16 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       const chargePulse = Math.min(1, pump.chargePulseMs / 320);
       const outputPulse = Math.min(1, pump.outputPulseMs / 320);
       const charged = pump.storedElectricity > 0;
+      const failing = pump.state === "failing";
+      const broken = pump.state === "broken";
+      const failureColor = pump.failureType === "electricity"
+        ? 0xffdc63
+        : pump.failureType === "water" ? COLORS.cyan : COLORS.danger;
 
-      machineGraphics.fillStyle(charged ? 0xffd65b : COLORS.cyan, 0.04 + chargePulse * 0.12);
+      machineGraphics.fillStyle(
+        broken ? COLORS.ashEdge : failing ? failureColor : charged ? 0xffd65b : COLORS.cyan,
+        failing ? 0.12 + Math.sin(visualTime / 90) * 0.04 : 0.04 + chargePulse * 0.12,
+      );
       machineGraphics.fillRoundedRect(
         x - layout.cell * 0.06,
         y - layout.cell * 0.06,
@@ -953,9 +961,9 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         height + layout.cell * 0.12,
         layout.cell * 0.16,
       );
-      machineGraphics.fillStyle(0x43515c, 1);
+      machineGraphics.fillStyle(broken ? COLORS.ash : failing ? 0x4b3030 : 0x43515c, 1);
       machineGraphics.fillRoundedRect(x, y, width, height, layout.cell * 0.14);
-      machineGraphics.fillStyle(0x222e37, 0.9);
+      machineGraphics.fillStyle(broken ? 0x111317 : failing ? 0x24181a : 0x222e37, 0.9);
       machineGraphics.fillRoundedRect(
         x + width * 0.16,
         y + height * 0.14,
@@ -963,9 +971,16 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         height * 0.48,
         layout.cell * 0.1,
       );
-      machineGraphics.lineStyle(2, charged ? 0xd6ba55 : 0x66818e, 1);
+      machineGraphics.lineStyle(
+        2,
+        broken ? COLORS.ashEdge : failing ? failureColor : charged ? 0xd6ba55 : 0x66818e,
+        1,
+      );
       machineGraphics.strokeRoundedRect(x, y, width, height, layout.cell * 0.14);
-      machineGraphics.fillStyle(charged ? 0xffd65b : 0x17232b, charged ? 0.86 : 0.9);
+      machineGraphics.fillStyle(
+        broken ? 0x282a2e : failing ? failureColor : charged ? 0xffd65b : 0x17232b,
+        charged || failing ? 0.86 : 0.9,
+      );
       machineGraphics.fillCircle(x + width / 2, y + height * 0.36, layout.cell * 0.12);
 
       const below = belts.get(key(pump.x, pump.y + pump.h));
@@ -974,7 +989,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         machineGraphics,
         cellCenter(pump.x, 0).x,
         layout.top + (pump.y + pump.h) * layout.cell - 5,
-        below?.outDir === "U",
+        pump.state === "normal" && below?.outDir === "U",
         true,
         0xffd65b,
       );
@@ -982,7 +997,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         machineGraphics,
         cellCenter(pump.x, 0).x,
         layout.top + pump.y * layout.cell + 5,
-        above?.state === "normal",
+        pump.state === "normal" && above?.state === "normal",
         false,
         COLORS.cyan,
       );
@@ -1001,13 +1016,24 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         };
         pumpViews.set(pump.id, view);
       }
-      const icon = charged ? "⚡" : outputPulse > 0 ? "💧" : "⚙️";
+      const failureIcon = pump.failureType === "electricity"
+        ? "⚡"
+        : pump.failureType === "water" ? "💧" : "🔥";
+      const icon = broken
+        ? "💀"
+        : failing ? failureIcon : charged ? "⚡" : outputPulse > 0 ? "💧" : "⚙️";
       view.icon
         .setText(icon)
         .setPosition(x + width / 2, y + height * 0.36)
         .setFontSize(Math.max(15, Math.round(layout.cell * 0.42)))
-        .setScale(1 + chargePulse * 0.16 + outputPulse * 0.1);
+        .setScale(
+          failing
+            ? 1 + Math.sin(visualTime / 80) * 0.1
+            : 1 + chargePulse * 0.16 + outputPulse * 0.1,
+        );
       view.label
+        .setText(broken ? "故障" : failing ? "故障中" : "ポンプ")
+        .setColor(broken ? "#9a9a9a" : failing ? "#ffd1c4" : "#dfe8ec")
         .setPosition(x + width / 2, y + height * 0.78)
         .setFontSize(Math.max(7, Math.round(layout.cell * 0.16)));
     }
@@ -1228,6 +1254,28 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       metalEmitter?.explode(9, position.x, position.y);
       demolitionSparkEmitter?.explode(5, position.x, position.y);
       playTone(190, 150, { endFrequency: 88, volume: 0.03, type: "triangle" });
+      return;
+    }
+    if (type === "machine-failure-start") {
+      const failureType = payload.failureType || payload.resource?.type || "fire";
+      if (failureType === "water") waterEmitter?.explode(22, position.x, position.y);
+      else sparkEmitter?.explode(failureType === "electricity" ? 28 : 22, position.x, position.y);
+      smokeEmitter?.explode(failureType === "fire" ? 11 : 6, position.x, position.y);
+      camera.shake(210, 0.009);
+      playTone(
+        failureType === "electricity" ? 720 : 150,
+        300,
+        {
+          endFrequency: failureType === "electricity" ? 120 : 65,
+          volume: 0.045,
+          type: failureType === "electricity" ? "square" : "sawtooth",
+        },
+      );
+      return;
+    }
+    if (type === "machine-broken") {
+      smokeEmitter?.explode(10, position.x, position.y);
+      playTone(105, 180, { endFrequency: 58, volume: 0.025, type: "triangle" });
       return;
     }
     if (type === "spawn") {
