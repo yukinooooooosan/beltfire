@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#10151d" />
+    <title>BELT FIRE — 炉へ火を届けよう</title>
+    <link rel="stylesheet" href="./styles.css?v=10" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <header class="mission-panel">
+        <div>
+          <p id="mission-label" class="eyebrow">MISSION 01</p>
+          <h1 id="mission-title">炉へ火を届けよう</h1>
+        </div>
+        <div class="mission-stats" aria-live="polite">
+          <div class="stat stat-fire">
+            <span id="resource-stat-icon" aria-hidden="true">🔥</span>
+            <strong id="delivered-count">0</strong><span>/10</span>
+          </div>
+          <div class="stat stat-cleanup" title="燃え滓の一括撤去可能数">
+            <span aria-hidden="true">🧹</span>
+            <strong id="cleanup-count">3</strong><span>回</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="board-wrap" aria-label="工場の盤面">
+        <canvas id="game-canvas"></canvas>
+        <div id="pause-state" class="pause-state">
+          <span aria-hidden="true">⏸</span>
+          <span>一時停止中・建設できます</span>
+        </div>
+        <button id="pause-button" class="pause-button" type="button" aria-label="工場を稼働する">
+          <span id="pause-button-icon" aria-hidden="true">▶</span>
+        </button>
+        <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+        <div id="clear-panel" class="clear-panel" hidden>
+          <div class="clear-badge">MISSION CLEAR</div>
+          <div id="clear-resource-icon" class="clear-flame" aria-hidden="true">🔥</div>
+          <h2 id="clear-title">火を10個届けました！</h2>
+          <p id="clear-detail">炉が無事に点火しました。</p>
+          <div class="clear-actions">
+            <button id="replay-button" class="primary-button" type="button">もう一度遊ぶ</button>
+            <button id="next-mission-button" class="secondary-button" type="button" hidden>次のミッション</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="guide" aria-live="polite">
+        <span id="guide-icon" aria-hidden="true">☝️</span>
+        <p id="guide-text">炎発生装置の矢印から、炉の入口までドラッグ</p>
+      </section>
+
+      <nav class="toolbar" aria-label="工場ツール">
+        <button id="belt-tool" class="tool-button active" type="button" aria-pressed="true">
+          <span class="tool-icon belt-icon" aria-hidden="true"></span>
+          <span>ベルト</span>
+        </button>
+        <button id="pump-tool" class="tool-button" type="button" aria-pressed="false" hidden>
+          <span class="tool-icon" aria-hidden="true">⚙️</span>
+          <span>ポンプ</span>
+          <strong id="pump-count" class="tool-count">2</strong>
+        </button>
+        <button id="remove-tool" class="tool-button" type="button" aria-pressed="false">
+          <span class="tool-icon" aria-hidden="true">🔨</span>
+          <span>撤去</span>
+        </button>
+        <button id="reset-button" class="tool-button" type="button">
+          <span class="tool-icon" aria-hidden="true">↻</span>
+          <span>リセット</span>
+        </button>
+      </nav>
+    </main>
+
+    <script type="module" src="./main.js?v=10"></script>
+  </body>
+</html>
