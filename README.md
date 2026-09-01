@@ -13,6 +13,8 @@ npm run dev
 
 ブラウザで表示された `http://127.0.0.1:5173/` を開きます。
 
+公開版は [GitHub Pages](https://yukinooooooosan.github.io/beltfire/) で遊べます。`main`ブランチへpushすると、テストとViteビルドの成功後に自動更新されます。
+
 通常はPhaser版Rendererで起動します。旧Canvas版との比較は
 `http://127.0.0.1:5173/?renderer=canvas` で行えます。
 
