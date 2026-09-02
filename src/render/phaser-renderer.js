@@ -42,6 +42,62 @@ function computeLayout(width, height) {
   };
 }
 
+function traceBoilerSilhouette(graphics, machine, layout) {
+  const left = layout.left + machine.x * layout.cell + 2;
+  const top = layout.top + machine.y * layout.cell + 2;
+  const columnRight = layout.left + (machine.x + 1) * layout.cell - 2;
+  const lowerTop = layout.top + (machine.y + 1) * layout.cell + 2;
+  const right = layout.left + (machine.x + 2) * layout.cell - 2;
+  const bottom = layout.top + (machine.y + 2) * layout.cell - 2;
+  graphics.beginPath();
+  graphics.moveTo(left, top);
+  graphics.lineTo(columnRight, top);
+  graphics.lineTo(columnRight, lowerTop);
+  graphics.lineTo(right, lowerTop);
+  graphics.lineTo(right, bottom);
+  graphics.lineTo(left, bottom);
+  graphics.closePath();
+}
+
+function drawUnifiedSteamMachineBody(
+  graphics,
+  machine,
+  layout,
+  bodyColor,
+  edgeColor,
+  glowAlpha,
+) {
+  if (machine.type === "boiler") {
+    graphics.lineStyle(Math.max(4, layout.cell * 0.1), edgeColor, glowAlpha);
+    traceBoilerSilhouette(graphics, machine, layout);
+    graphics.strokePath();
+    graphics.fillStyle(bodyColor, 1);
+    traceBoilerSilhouette(graphics, machine, layout);
+    graphics.fillPath();
+    graphics.lineStyle(2, edgeColor, 1);
+    traceBoilerSilhouette(graphics, machine, layout);
+    graphics.strokePath();
+    return;
+  }
+
+  const x = layout.left + machine.x * layout.cell + 2;
+  const y = layout.top + machine.y * layout.cell + 2;
+  const width = machine.w * layout.cell - 4;
+  const height = machine.h * layout.cell - 4;
+  graphics.fillStyle(edgeColor, glowAlpha);
+  graphics.fillRoundedRect(
+    x - layout.cell * 0.05,
+    y - layout.cell * 0.05,
+    width + layout.cell * 0.1,
+    height + layout.cell * 0.1,
+    layout.cell * 0.16,
+  );
+  graphics.fillStyle(bodyColor, 1);
+  graphics.fillRoundedRect(x, y, width, height, layout.cell * 0.14);
+  graphics.lineStyle(2, edgeColor, 1);
+  graphics.strokeRoundedRect(x, y, width, height, layout.cell * 0.14);
+}
+
 function cloneEventPayload(payload = {}) {
   return {
     ...payload,
@@ -984,39 +1040,44 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       const outputPulse = Math.min(1, machine.outputPulseMs / 320);
       const accent = machine.type === "boiler" ? COLORS.orange : 0xbfeaf2;
       const failureColor = resourceColor(machine.failureType || machine.contaminationType);
+      const bodyColor = broken
+        ? COLORS.ash
+        : failing ? 0x4b3030 : machine.type === "boiler" ? 0x51483e : 0x40515b;
+      const edgeColor = broken
+        ? COLORS.ashEdge
+        : failing || contaminationDanger > 0
+          ? failureColor
+          : machine.type === "boiler" ? 0x9a7658 : 0x7596a1;
+      const glowAlpha = failing
+        ? 0.12 + Math.sin(visualTime / 90) * 0.04
+        : 0.05 + pulse * 0.1 + contaminationDanger * 0.09;
+      drawUnifiedSteamMachineBody(
+        machineGraphics,
+        machine,
+        layout,
+        bodyColor,
+        edgeColor,
+        glowAlpha,
+      );
 
-      for (const cell of machine.cells) {
-        const x = layout.left + cell.x * layout.cell + 2;
-        const y = layout.top + cell.y * layout.cell + 2;
-        const size = layout.cell - 4;
-        machineGraphics.fillStyle(
-          broken ? COLORS.ashEdge : failing || contaminationDanger > 0 ? failureColor : accent,
-          failing
-            ? 0.12 + Math.sin(visualTime / 90) * 0.04
-            : 0.04 + pulse * 0.1 + contaminationDanger * 0.09,
-        );
+      for (const port of machine.inputPorts) {
+        const inputCenter = cellCenter(port.targetCell.x, port.targetCell.y);
+        machineGraphics.fillStyle(broken ? 0x111317 : 0x202930, 0.76);
         machineGraphics.fillRoundedRect(
-          x - layout.cell * 0.05,
-          y - layout.cell * 0.05,
-          size + layout.cell * 0.1,
-          size + layout.cell * 0.1,
-          layout.cell * 0.14,
+          inputCenter.x - layout.cell * 0.31,
+          inputCenter.y - layout.cell * 0.31,
+          layout.cell * 0.62,
+          layout.cell * 0.62,
+          layout.cell * 0.11,
         );
-        machineGraphics.fillStyle(
-          broken ? COLORS.ash : failing ? 0x4b3030 : machine.type === "boiler" ? 0x51483e : 0x40515b,
-          1,
+        machineGraphics.lineStyle(1, edgeColor, broken ? 0.35 : 0.62);
+        machineGraphics.strokeRoundedRect(
+          inputCenter.x - layout.cell * 0.31,
+          inputCenter.y - layout.cell * 0.31,
+          layout.cell * 0.62,
+          layout.cell * 0.62,
+          layout.cell * 0.11,
         );
-        machineGraphics.fillRoundedRect(x, y, size, size, layout.cell * 0.12);
-        machineGraphics.lineStyle(
-          2,
-          broken
-            ? COLORS.ashEdge
-            : failing || contaminationDanger > 0
-              ? failureColor
-              : machine.type === "boiler" ? 0x9a7658 : 0x7596a1,
-          1,
-        );
-        machineGraphics.strokeRoundedRect(x, y, size, size, layout.cell * 0.12);
       }
 
       if (contaminationDanger > 0 && machine.contaminationPortIndex !== null) {
@@ -1299,6 +1360,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       const chargePulse = Math.min(1, pump.chargePulseMs / 320);
       const outputPulse = Math.min(1, pump.outputPulseMs / 320);
       const charged = pump.storedElectricity > 0;
+      const storedType = pump.contaminationType || (charged ? "electricity" : null);
       const failing = pump.state === "failing";
       const broken = pump.state === "broken";
       const contaminated = pump.state === "normal" && Boolean(pump.contaminationType);
@@ -1367,6 +1429,32 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       );
       machineGraphics.fillCircle(x + width / 2, y + height * 0.36, layout.cell * 0.12);
 
+      const pumpInputCenter = cellCenter(pump.x, pump.y + pump.h - 1);
+      const inputColor = storedType ? resourceColor(storedType) : 0x7d8d99;
+      machineGraphics.fillStyle(
+        broken ? 0x111317 : storedType ? inputColor : 0x17232b,
+        broken ? 0.72 : storedType ? 0.18 : 0.88,
+      );
+      machineGraphics.fillRoundedRect(
+        pumpInputCenter.x - layout.cell * 0.34,
+        pumpInputCenter.y - layout.cell * 0.34,
+        layout.cell * 0.68,
+        layout.cell * 0.68,
+        layout.cell * 0.12,
+      );
+      machineGraphics.lineStyle(
+        Math.max(1.5, layout.cell * 0.04),
+        inputColor,
+        broken ? 0.35 : storedType ? 0.9 : 0.58,
+      );
+      machineGraphics.strokeRoundedRect(
+        pumpInputCenter.x - layout.cell * 0.34,
+        pumpInputCenter.y - layout.cell * 0.34,
+        layout.cell * 0.68,
+        layout.cell * 0.68,
+        layout.cell * 0.12,
+      );
+
       const below = belts.get(key(pump.x, pump.y + pump.h));
       const above = belts.get(key(pump.x, pump.y - 1));
       drawPortArrow(
@@ -1432,13 +1520,12 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         )
         .setPosition(cellCenter(pump.x, pump.y).x, cellCenter(pump.x, pump.y).y + layout.cell * 0.25)
         .setFontSize(Math.max(7, Math.round(layout.cell * 0.16)));
-      const storedType = pump.contaminationType || (charged ? "electricity" : null);
       const storedCenter = cellCenter(pump.x, pump.y + pump.h - 1);
       view.slots[0]
         .setVisible(!broken && Boolean(storedType))
         .setText(storedType ? resourceIcon(storedType) : "")
         .setPosition(storedCenter.x, storedCenter.y)
-        .setFontSize(Math.max(16, Math.round(layout.cell * 0.46)))
+        .setFontSize(Math.max(18, Math.round(layout.cell * 0.56)))
         .setScale(1 + chargePulse * 0.15 + contaminationDanger * 0.1);
       if (storedType) {
         const storedShadow = storedType === "fire"
