@@ -28,7 +28,6 @@ export function buildBeltsFromPath(path, sourcePort, targetFurnace) {
       state: "normal",
       failureType: null,
       failureMs: 0,
-      spreadMs: 0,
     };
   });
 }

@@ -12,6 +12,7 @@ import {
   buildBeltsFromPath,
   connectedBrokenNetwork,
 } from "../src/core/construction.js";
+import { updateBeltFailures } from "../src/core/failure.js";
 import { key } from "../src/core/grid.js";
 import {
   createSimulationState,
@@ -72,7 +73,7 @@ test("一本のベルトで火を10個納品し、Renderer用イベントを通�
   assert.equal(completed, 1);
 });
 
-test("行き止まりの火が故障を起こし、接続ベルトが💀になる", () => {
+test("行き止まりで実際に滞留した火のマスがそれぞれ💀になる", () => {
   const { furnace, generator } = createMissionMachines();
   const simulation = createSimulationState();
   const belts = beltMap(buildBeltsFromPath(
@@ -107,6 +108,28 @@ test("行き止まりの火が故障を起こし、接続ベルトが💀にな�
   assert.ok(started.every((item) => item.failureType === "fire"));
   assert.ok(broken.every((item) => item.failureType === "fire"));
   assert.ok([...belts.values()].every((belt) => belt.state === "broken"));
+});
+
+test("故障は資材のない接続ベルトへ伝播しない", () => {
+  const belts = beltMap(buildBeltsFromPath(
+    [
+      { x: 2, y: 4 },
+      { x: 2, y: 3 },
+    ],
+    null,
+    null,
+  ));
+  const stalledBelt = belts.get(key(2, 3));
+  const emptyBelt = belts.get(key(2, 4));
+  stalledBelt.state = "failing";
+  stalledBelt.failureType = "steam";
+
+  updateBeltFailures(2000, belts);
+
+  assert.equal(stalledBelt.state, "broken");
+  assert.equal(stalledBelt.failureType, "steam");
+  assert.equal(emptyBelt.state, "normal");
+  assert.equal(emptyBelt.failureType, null);
 });
 
 test("ポンプが電気を水へ変換し、貯水タンクへ10個納品する", () => {
