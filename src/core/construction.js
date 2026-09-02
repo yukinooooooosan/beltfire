@@ -44,6 +44,9 @@ export function connectedBrokenComponent(start, belts) {
 }
 
 function deviceContainsCell(device, cell) {
+  if (device.cells) {
+    return device.cells.some((deviceCell) => sameCell(deviceCell, cell));
+  }
   return cell.x >= device.x
     && cell.x < device.x + device.w
     && cell.y >= device.y

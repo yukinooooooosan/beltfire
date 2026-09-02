@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { DIRS, GRID, TIMING } from "../content/mission-01.js";
 import { buildBeltsFromPath } from "../core/construction.js";
 import { FAILURE_TIMING } from "../core/failure.js";
-import { inBounds, incomingBeltDirections, key } from "../core/grid.js";
+import { inBounds, incomingBeltDirections, key, sameCell } from "../core/grid.js";
 
 const COLORS = {
   background: 0x10151d,
@@ -50,6 +50,7 @@ function cloneEventPayload(payload = {}) {
     fire: payload.fire ? { ...payload.fire } : undefined,
     furnace: payload.furnace ? { ...payload.furnace } : undefined,
     generator: payload.generator ? { ...payload.generator } : undefined,
+    lamp: payload.lamp ? { ...payload.lamp } : undefined,
     machine: payload.machine ? { ...payload.machine } : undefined,
     origin: payload.origin ? { ...payload.origin } : undefined,
     pump: payload.pump ? { ...payload.pump } : undefined,
@@ -83,6 +84,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
   const fireViews = new Map();
   const beltStateViews = new Map();
   const pumpViews = new Map();
+  const sourceViews = new Map();
   const demolitionViews = new Set();
   const demolitionTimers = new Set();
 
@@ -445,12 +447,25 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
     const directions = preview && belt.previewInDir
       ? [belt.previewInDir]
       : incomingBeltDirections(belt, state.belts, state.generator);
+    for (const generator of state.generators || []) {
+      if (
+        belt.y === generator.y - 1
+        && (belt.x === generator.x || belt.x === generator.x + 1)
+        && !directions.includes("D")
+      ) directions.push("D");
+    }
     if (
       state.pumps?.some((pump) => belt.x === pump.x && belt.y === pump.y - 1)
       && !directions.includes("D")
     ) {
       directions.push("D");
     }
+    if (
+      state.machines?.some((machine) => (
+        machine.state === "normal" && sameCell(machine.outputPort?.approach, belt)
+      ))
+      && !directions.includes("D")
+    ) directions.push("D");
     if (belt.outDir && !directions.includes(belt.outDir)) directions.push(belt.outDir);
     return directions;
   }
@@ -540,7 +555,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       const center = cellCenter(belt.x, belt.y);
       const failureIcon = belt.failureType === "electricity"
         ? "⚡"
-        : belt.failureType === "water" ? "💧" : "🔥";
+        : belt.failureType === "water" ? "💧" : belt.failureType === "steam" ? "☁️" : "🔥";
       view.setPosition(center.x, center.y - (belt.state === "failing" ? layout.cell * 0.11 : 0));
       view.setText(belt.state === "failing" ? failureIcon : "💀");
       view.setFontSize(Math.max(13, Math.round(layout.cell * (belt.state === "failing" ? 0.56 : 0.5))));
@@ -765,6 +780,281 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       view.label.destroy();
       pumpViews.delete(pumpId);
     }
+  }
+
+  function clearSourceViews(activeIds = new Set()) {
+    for (const [sourceId, view] of sourceViews) {
+      if (activeIds.has(sourceId)) continue;
+      view.icon.destroy();
+      view.label.destroy();
+      sourceViews.delete(sourceId);
+    }
+  }
+
+  function resourceIcon(type) {
+    if (type === "electricity") return "⚡";
+    if (type === "water") return "💧";
+    if (type === "steam") return "☁️";
+    return "🔥";
+  }
+
+  function resourceColor(type) {
+    if (type === "electricity") return 0xffdc63;
+    if (type === "water") return COLORS.cyan;
+    if (type === "steam") return 0xcceef5;
+    return COLORS.orange;
+  }
+
+  function drawSteamMachines(state) {
+    machineGraphics.clear();
+    furnaceGraphics.clear();
+    generatorLabel.setVisible(false);
+    const { lamp, generators = [], machines = [], belts } = state;
+
+    const lampWidth = lamp.w * layout.cell - 4;
+    const lampHeight = lamp.h * layout.cell - 4;
+    const lampCenter = {
+      x: layout.left + lamp.x * layout.cell + 2 + lampWidth / 2,
+      y: layout.top + lamp.y * layout.cell + 2 + lampHeight / 2,
+    };
+    const lampX = -lampWidth / 2;
+    const lampY = -lampHeight / 2;
+    const lit = lamp.received >= lamp.target;
+    const counterPulse = Math.min(1, lamp.counterPulseMs / 420);
+    const zoomProgress = furnaceZoom.remainingMs > 0
+      ? 1 - furnaceZoom.remainingMs / furnaceZoom.durationMs
+      : 1;
+    const lampScale = furnaceZoom.remainingMs > 0
+      ? 1 + Math.sin(zoomProgress * Math.PI) * furnaceZoom.strength
+      : 1;
+
+    furnaceGraphics.setPosition(lampCenter.x, lampCenter.y).setScale(lampScale);
+    furnaceGraphics.fillStyle(0xffdf72, lit ? 0.24 + counterPulse * 0.12 : 0.045);
+    furnaceGraphics.fillCircle(0, -layout.cell * 0.1, layout.cell * (lit ? 1.02 : 0.72));
+    furnaceGraphics.fillStyle(lit ? 0x5b543d : 0x3d4650, 1);
+    furnaceGraphics.fillRoundedRect(lampX, lampY, lampWidth, lampHeight, layout.cell * 0.18);
+    furnaceGraphics.fillStyle(lit ? 0x322f24 : 0x202831, 0.92);
+    furnaceGraphics.fillRoundedRect(
+      lampX + 2,
+      lampY + lampHeight * 0.48,
+      lampWidth - 4,
+      lampHeight * 0.5,
+      layout.cell * 0.15,
+    );
+    furnaceGraphics.lineStyle(2, lit ? 0xffdc63 : 0x6f7b87, 1);
+    furnaceGraphics.strokeRoundedRect(lampX, lampY, lampWidth, lampHeight, layout.cell * 0.18);
+
+    furnaceIcon
+      .setVisible(true)
+      .setText("💡")
+      .setPosition(lampCenter.x, lampCenter.y - layout.cell * 0.16 * lampScale)
+      .setFontSize(Math.max(24, Math.round(layout.cell * 0.66)))
+      .setScale((1 + counterPulse * 0.14) * lampScale)
+      .setAlpha(lit ? 1 : 0.46);
+    furnaceIcon.setShadow(0, 0, lit ? "#ffe06b" : "#687580", lit ? 22 : 4, true, true);
+    furnaceCounter
+      .setVisible(true)
+      .setPosition(lampCenter.x, lampCenter.y + layout.cell * 0.53 * lampScale)
+      .setText(lit ? "⚡ 点灯" : "⚡ 0/1")
+      .setFontSize(Math.max(9, Math.round(layout.cell * 0.2)))
+      .setScale((1 + counterPulse * 0.09) * lampScale)
+      .setColor(lit ? "#ffe693" : "#eef4f6");
+
+    for (let port = 0; port < 2; port += 1) {
+      const x = lamp.x + port;
+      const below = belts.get(key(x, lamp.y + lamp.h));
+      drawPortArrow(
+        furnaceGraphics,
+        (port - 0.5) * layout.cell,
+        layout.cell - 5,
+        below?.outDir === "U",
+        true,
+        0xffdc63,
+      );
+    }
+
+    const activeSourceIds = new Set();
+    for (const generator of generators) {
+      activeSourceIds.add(generator.id);
+      const x = layout.left + generator.x * layout.cell + 2;
+      const y = layout.top + generator.y * layout.cell + 2;
+      const width = generator.w * layout.cell - 4;
+      const height = generator.h * layout.cell - 4;
+      const color = resourceColor(generator.resourceType);
+      machineGraphics.fillStyle(color, 0.065);
+      machineGraphics.fillRoundedRect(
+        x - layout.cell * 0.08,
+        y - layout.cell * 0.08,
+        width + layout.cell * 0.16,
+        height + layout.cell * 0.16,
+        layout.cell * 0.21,
+      );
+      machineGraphics.fillStyle(generator.resourceType === "water" ? 0x405665 : COLORS.generatorTop, 1);
+      machineGraphics.fillRoundedRect(x, y, width, height, layout.cell * 0.18);
+      machineGraphics.fillStyle(generator.resourceType === "water" ? 0x233741 : COLORS.generatorBottom, 0.86);
+      machineGraphics.fillRoundedRect(
+        x + 2,
+        y + height * 0.5,
+        width - 4,
+        height * 0.48,
+        layout.cell * 0.15,
+      );
+      machineGraphics.lineStyle(2, generator.resourceType === "water" ? 0x6f92a1 : 0x7a8089, 1);
+      machineGraphics.strokeRoundedRect(x, y, width, height, layout.cell * 0.18);
+
+      for (let port = 0; port < 2; port += 1) {
+        const chamberX = x + width * (0.08 + port * 0.5);
+        const chamberY = y + height * 0.12;
+        const chamberWidth = width * 0.34;
+        const chamberHeight = height * 0.47;
+        const flash = Math.min(1, generator.portFlashMs[port] / TIMING.ejectMs);
+        machineGraphics.fillStyle(0x06090d, 0.66 + flash * 0.14);
+        machineGraphics.fillRoundedRect(
+          chamberX,
+          chamberY,
+          chamberWidth,
+          chamberHeight,
+          layout.cell * 0.1,
+        );
+        machineGraphics.lineStyle(Math.max(1, layout.cell * 0.025), color, 0.24 + flash * 0.7);
+        machineGraphics.strokeRoundedRect(
+          chamberX,
+          chamberY,
+          chamberWidth,
+          chamberHeight,
+          layout.cell * 0.1,
+        );
+      }
+
+      let view = sourceViews.get(generator.id);
+      if (!view) {
+        view = {
+          icon: scene.add.text(0, 0, resourceIcon(generator.resourceType), { fontFamily: "sans-serif" })
+            .setOrigin(0.5).setDepth(24),
+          label: scene.add.text(0, 0, generator.label, {
+            color: "#e7eef1",
+            fontFamily: "Inter, Hiragino Sans, Yu Gothic UI, sans-serif",
+            fontStyle: "bold",
+          }).setOrigin(0.5).setDepth(24),
+        };
+        sourceViews.set(generator.id, view);
+      }
+      const flash = Math.max(...generator.portFlashMs) / TIMING.ejectMs;
+      view.icon
+        .setText(resourceIcon(generator.resourceType))
+        .setPosition(x + width / 2, y + height * 0.37)
+        .setFontSize(Math.max(19, Math.round(layout.cell * 0.49)))
+        .setScale(1 + flash * 0.12);
+      view.label
+        .setText(generator.label)
+        .setPosition(x + width / 2, y + height * 0.78)
+        .setFontSize(Math.max(7, Math.round(layout.cell * 0.16)));
+
+      for (let port = 0; port < 2; port += 1) {
+        const portX = generator.x + port;
+        const connected = belts.get(key(portX, generator.y - 1))?.state === "normal";
+        drawPortArrow(
+          machineGraphics,
+          cellCenter(portX, generator.y).x,
+          layout.top + generator.y * layout.cell + 5,
+          connected,
+          false,
+          color,
+        );
+      }
+    }
+    clearSourceViews(activeSourceIds);
+
+    const activeMachineIds = new Set();
+    for (const machine of machines) {
+      activeMachineIds.add(machine.id);
+      const failing = machine.state === "failing";
+      const broken = machine.state === "broken";
+      const pulse = Math.min(1, machine.inputPulseMs / 320);
+      const outputPulse = Math.min(1, machine.outputPulseMs / 320);
+      const accent = machine.type === "boiler" ? COLORS.orange : 0xbfeaf2;
+      const failureColor = resourceColor(machine.failureType);
+
+      for (const cell of machine.cells) {
+        const x = layout.left + cell.x * layout.cell + 2;
+        const y = layout.top + cell.y * layout.cell + 2;
+        const size = layout.cell - 4;
+        machineGraphics.fillStyle(
+          broken ? COLORS.ashEdge : failing ? failureColor : accent,
+          failing ? 0.12 + Math.sin(visualTime / 90) * 0.04 : 0.04 + pulse * 0.1,
+        );
+        machineGraphics.fillRoundedRect(
+          x - layout.cell * 0.05,
+          y - layout.cell * 0.05,
+          size + layout.cell * 0.1,
+          size + layout.cell * 0.1,
+          layout.cell * 0.14,
+        );
+        machineGraphics.fillStyle(
+          broken ? COLORS.ash : failing ? 0x4b3030 : machine.type === "boiler" ? 0x51483e : 0x40515b,
+          1,
+        );
+        machineGraphics.fillRoundedRect(x, y, size, size, layout.cell * 0.12);
+        machineGraphics.lineStyle(
+          2,
+          broken ? COLORS.ashEdge : failing ? failureColor : machine.type === "boiler" ? 0x9a7658 : 0x7596a1,
+          1,
+        );
+        machineGraphics.strokeRoundedRect(x, y, size, size, layout.cell * 0.12);
+      }
+
+      for (const port of machine.inputPorts) {
+        const below = belts.get(key(port.approach.x, port.approach.y));
+        drawPortArrow(
+          machineGraphics,
+          cellCenter(port.approach.x, 0).x,
+          layout.top + port.approach.y * layout.cell - 5,
+          machine.state === "normal" && below?.outDir === "U",
+          true,
+          machine.type === "boiler" ? COLORS.orangeSoft : 0xcceef5,
+        );
+      }
+      const above = belts.get(key(machine.outputPort.approach.x, machine.outputPort.approach.y));
+      drawPortArrow(
+        machineGraphics,
+        cellCenter(machine.outputPort.approach.x, 0).x,
+        layout.top + machine.y * layout.cell + 5,
+        machine.state === "normal" && above?.state === "normal",
+        false,
+        machine.type === "boiler" ? 0xcceef5 : 0xffdc63,
+      );
+
+      let view = pumpViews.get(machine.id);
+      if (!view) {
+        view = {
+          icon: scene.add.text(0, 0, "", { fontFamily: "sans-serif" })
+            .setOrigin(0.5).setDepth(24),
+          label: scene.add.text(0, 0, machine.label, {
+            color: "#dfe8ec",
+            fontFamily: "Inter, Hiragino Sans, Yu Gothic UI, sans-serif",
+            fontStyle: "bold",
+          }).setOrigin(0.5).setDepth(24),
+        };
+        pumpViews.set(machine.id, view);
+      }
+      const stored = machine.storedResources.map(resourceIcon).join("");
+      const icon = broken
+        ? "💀"
+        : failing ? resourceIcon(machine.failureType) : stored || (machine.type === "boiler" ? "♨️" : "🌀");
+      const centerX = layout.left + (machine.x + (machine.type === "boiler" ? 0.72 : 0.5)) * layout.cell;
+      const centerY = layout.top + (machine.y + (machine.type === "boiler" ? 1.02 : 0.76)) * layout.cell;
+      view.icon
+        .setText(icon)
+        .setPosition(centerX, centerY - layout.cell * 0.13)
+        .setFontSize(Math.max(14, Math.round(layout.cell * (stored.length > 2 ? 0.34 : 0.43))))
+        .setScale(failing ? 1 + Math.sin(visualTime / 80) * 0.1 : 1 + pulse * 0.12 + outputPulse * 0.1);
+      view.label
+        .setText(broken ? "故障" : failing ? "故障中" : machine.label)
+        .setColor(broken ? "#9a9a9a" : failing ? "#ffd1c4" : "#dfe8ec")
+        .setPosition(centerX, centerY + layout.cell * 0.25)
+        .setFontSize(Math.max(7, Math.round(layout.cell * 0.15)));
+    }
+    clearPumpViews(activeMachineIds);
   }
 
   function drawWaterMachines(state) {
@@ -1041,10 +1331,16 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
   }
 
   function drawMachines(state) {
-    if (state.missionType === "water" || state.tank) {
+    if (state.missionType === "steam" || state.lamp) {
+      drawSteamMachines(state);
+    } else if (state.missionType === "water" || state.tank) {
+      generatorLabel.setVisible(true);
+      clearSourceViews();
       drawWaterMachines(state);
     } else {
       clearPumpViews();
+      clearSourceViews();
+      generatorLabel.setVisible(true);
       generatorLabel.setText("炎発生装置");
       furnaceIcon.setText("🔥");
       furnaceIcon.setShadow(0, 0, "#ff5b18", 12, true, true);
@@ -1066,10 +1362,10 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
           .setDepth(42);
         fireViews.set(resource.id, view);
       }
-      const icon = resourceType === "electricity" ? "⚡" : resourceType === "water" ? "💧" : "🔥";
+      const icon = resourceIcon(resourceType);
       const shadow = resourceType === "electricity"
         ? "#ffe06b"
-        : resourceType === "water" ? "#65e2ef" : "#ff5e14";
+        : resourceType === "water" ? "#65e2ef" : resourceType === "steam" ? "#d8f5f8" : "#ff5e14";
       view.setText(icon);
       view.setShadow(0, 0, shadow, resourceType === "water" ? 7 : 10, true, true);
 
@@ -1083,7 +1379,9 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       const warning = Math.min(1, resource.stalledMs / FAILURE_TIMING.warningMs);
       const pulse = 1 + Math.sin(visualTime / 95) * 0.06 * warning;
       const ejectScale = resource.ejecting ? 0.64 + progress * 0.36 : 1;
-      const fontRatio = resourceType === "electricity" ? 0.48 : resourceType === "water" ? 0.5 : 0.56;
+      const fontRatio = resourceType === "electricity"
+        ? 0.48
+        : resourceType === "water" ? 0.5 : resourceType === "steam" ? 0.52 : 0.56;
       view
         .setPosition(x, y)
         .setFontSize(Math.max(17, Math.round(layout.cell * fontRatio)))
@@ -1099,7 +1397,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         );
         const warningColor = resourceType === "electricity"
           ? 0xffdc63
-          : resourceType === "water" ? COLORS.cyan : COLORS.danger;
+          : resourceType === "water" ? COLORS.cyan : resourceType === "steam" ? 0xcceef5 : COLORS.danger;
         warningGraphics.lineStyle(
           Math.max(2, layout.cell * 0.065),
           warningColor,
@@ -1204,7 +1502,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
     }
     if (type === "delivery") {
       const resource = payload.fire || payload.resource;
-      const target = payload.furnace || payload.tank;
+      const target = payload.furnace || payload.tank || payload.lamp;
       return {
         x: cellCenter(resource.x, 0).x,
         y: layout.top + target.y * layout.cell + target.h * layout.cell,
@@ -1223,7 +1521,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       );
     }
     if (payload.belt) return cellCenter(payload.belt.x, payload.belt.y);
-    const target = payload.furnace || payload.tank;
+    const target = payload.furnace || payload.tank || payload.lamp;
     if (target) {
       return cellCenter(
         target.x + (target.w - 1) / 2,
@@ -1279,12 +1577,27 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       return;
     }
     if (type === "spawn") {
-      sparkEmitter?.explode(6, position.x, position.y - layout.cell * 0.1);
       const resource = payload.fire || payload.resource;
+      if (resource.type === "water") waterEmitter?.explode(6, position.x, position.y - layout.cell * 0.1);
+      else sparkEmitter?.explode(6, position.x, position.y - layout.cell * 0.1);
       playTone(
         resource.type === "electricity" ? 410 : 280,
         70,
         { endFrequency: resource.type === "electricity" ? 620 : 420, volume: 0.012, type: "triangle" },
+      );
+      return;
+    }
+    if (type === "machine-input" || type === "machine-output") {
+      const resource = payload.resource;
+      if (resource?.type === "water" || resource?.type === "steam") {
+        waterEmitter?.explode(7, position.x, position.y);
+      } else {
+        sparkEmitter?.explode(7, position.x, position.y);
+      }
+      playTone(
+        type === "machine-input" ? 330 : 510,
+        90,
+        { endFrequency: type === "machine-input" ? 420 : 650, volume: 0.018, type: "triangle" },
       );
       return;
     }

@@ -10,11 +10,14 @@ main.js
 │  └─ src/content/mission-01.js
 ├─ mission-02-game.js
 │  └─ src/content/mission-02.js
+├─ mission-03-game.js
+│  └─ src/content/mission-03.js
 ├─ src/core/grid.js
 ├─ src/core/construction.js
 ├─ src/core/failure.js
 ├─ src/core/simulation.js
 ├─ src/core/water-simulation.js
+├─ src/core/steam-simulation.js
 └─ src/render/
    ├─ renderer-factory.js
    ├─ phaser-renderer.js
@@ -23,7 +26,7 @@ main.js
 
 ### `main.js` / アプリケーション層
 
-URLからミッションを選びます。`game.js`がMission 01、`mission-02-game.js`がMission 02のDOM、ボタン、ポインター入力、ガイド表示を接続します。ゲームルールやCanvasの描画命令は持ちません。
+URLからミッションを選びます。`game.js`がMission 01、`mission-02-game.js`がMission 02、`mission-03-game.js`がMission 03のDOM、ボタン、ポインター入力、ガイド表示を接続します。ゲームルールやCanvasの描画命令は持ちません。Mission 03では施設ボタンの短押しと長押しを分離し、長押し時だけ施設選択パレットを開きます。
 
 ### `src/content/mission-01.js`
 
@@ -32,6 +35,10 @@ URLからミッションを選びます。`game.js`がMission 01、`mission-02-g
 ### `src/content/mission-02.js`
 
 電気発生装置、貯水タンク、配置可能なポンプ、目標数と時間定数を定義します。
+
+### `src/content/mission-03.js`
+
+炎・水発生装置、ランプ、配置可能なL字ボイラーと縦型タービン、各設備の入出力ポートと所持数を定義します。L字設備は矩形ではなく、実際に占有する3セルを`cells`として保持します。
 
 ### `src/core/grid.js`
 
@@ -52,6 +59,10 @@ URLからミッションを選びます。`game.js`がMission 01、`mission-02-g
 ### `src/core/water-simulation.js`
 
 電気の生成・搬送、ポンプの入力容量と保持、水への変換・排出、貯水タンクへの納品を扱います。ポンプは空き容量があれば全素材を受け入れ、電気は正常処理、その他は設備故障へ分岐します。満杯時の詰まりと、その手前に滞留した資源による故障もCore状態から自然に発生します。
+
+### `src/core/steam-simulation.js`
+
+火と水の生成、ボイラーの2枠ストックと組み合わせ判定、蒸気への変換、タービンによる発電、ランプへの納品を扱います。設備が受け付ける素材と成立するレシピを分離しているため、火＋火／水＋水は安全に受け入れられますが変換されず、設備内部で詰まります。
 
 ### `src/render/renderer-factory.js`
 
@@ -92,6 +103,8 @@ Phaser scene
 - Phaser版とCanvas版の切替
 - 設備、ベルト、火・電気・水、危険リング、建設プレビューのPhaser描画
 - 盤面へ配置する1×2ポンプと、充電・排水状態の表示
+- 盤面へ配置するL字ボイラーと1×2タービン、内部ストックと変換状態の表示
+- 火・水の2発生装置、蒸気の搬送、点灯前後のランプ表示
 - 射出、納品、原因別の故障開始、共通の💀化、クリアのイベント演出
 - パーティクル、カメラFX、合成効果音
 - Coreだけを止める一時停止

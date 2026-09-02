@@ -4,6 +4,11 @@ import assert from "node:assert/strict";
 import { createMissionMachines } from "../src/content/mission-01.js";
 import { createMission02Machines, createPump } from "../src/content/mission-02.js";
 import {
+  createBoiler,
+  createMission03Machines,
+  createTurbine,
+} from "../src/content/mission-03.js";
+import {
   buildBeltsFromPath,
   connectedBrokenNetwork,
 } from "../src/core/construction.js";
@@ -16,6 +21,10 @@ import {
   createWaterSimulationState,
   updateWaterSimulation,
 } from "../src/core/water-simulation.js";
+import {
+  createSteamSimulationState,
+  updateSteamSimulation,
+} from "../src/core/steam-simulation.js";
 
 function beltMap(items) {
   return new Map(items.map((belt) => [key(belt.x, belt.y), belt]));
@@ -298,4 +307,148 @@ test("💀ポンプが入出力側の💀ベルトを一つの故障ネットワ
     new Set(network.belts.map((belt) => key(belt.x, belt.y))),
     new Set([key(outputBelt.x, outputBelt.y), key(inputBelt.x, inputBelt.y)]),
   );
+});
+
+test("火と水をボイラーとタービンで電気に変換し、ランプを点灯する", () => {
+  const { lamp, generators } = createMission03Machines();
+  const boiler = createBoiler("test-boiler", 3, 6);
+  const turbine = createTurbine("test-turbine", 3, 3);
+  const firePath = buildBeltsFromPath(
+    [
+      { x: 1, y: 9 },
+      { x: 1, y: 8 },
+      { x: 2, y: 8 },
+      { x: 3, y: 8 },
+    ],
+    1,
+    boiler.inputPorts[0].targetCell,
+  );
+  const waterPath = buildBeltsFromPath(
+    [
+      { x: 6, y: 9 },
+      { x: 6, y: 8 },
+      { x: 5, y: 8 },
+      { x: 4, y: 8 },
+    ],
+    0,
+    boiler.inputPorts[1].targetCell,
+  );
+  const steamPath = buildBeltsFromPath(
+    [{ x: 3, y: 5 }],
+    0,
+    turbine.inputPorts[0].targetCell,
+  );
+  const electricPath = buildBeltsFromPath(
+    [{ x: 3, y: 2 }],
+    0,
+    { x: lamp.x, y: lamp.y + lamp.h - 1 },
+  );
+  const belts = beltMap([...firePath, ...waterPath, ...steamPath, ...electricPath]);
+  const simulation = createSteamSimulationState();
+  let steamOutputs = 0;
+  let electricOutputs = 0;
+  let completions = 0;
+
+  for (let elapsed = 0; elapsed < 30000 && !simulation.completed; elapsed += 50) {
+    updateSteamSimulation(simulation, 50, {
+      belts,
+      generators,
+      machines: [boiler, turbine],
+      lamp,
+      callbacks: {
+        onMachineOutput(machine, resource) {
+          if (machine.type === "boiler" && resource.type === "steam") steamOutputs += 1;
+          if (machine.type === "turbine" && resource.type === "electricity") electricOutputs += 1;
+        },
+        onComplete() { completions += 1; },
+      },
+    });
+  }
+
+  assert.equal(lamp.received, 1);
+  assert.equal(simulation.completed, true);
+  assert.ok(steamOutputs >= 1);
+  assert.ok(electricOutputs >= 1);
+  assert.equal(completions, 1);
+});
+
+test("ボイラーは火を2個受け入れても壊れず、詰まったまま蒸気を作らない", () => {
+  const { lamp, generators } = createMission03Machines();
+  const boiler = createBoiler("jammed-boiler", 3, 6);
+  const inputBelts = buildBeltsFromPath(
+    [
+      { x: 3, y: 8 },
+      { x: 4, y: 8 },
+    ],
+    null,
+    boiler.inputPorts[1].targetCell,
+  );
+  inputBelts[0].outDir = "U";
+  inputBelts[1].outDir = "U";
+  const belts = beltMap(inputBelts);
+  const simulation = createSteamSimulationState();
+  for (const port of boiler.inputPorts) {
+    simulation.resources.push({
+      id: simulation.nextResourceId,
+      type: "fire",
+      x: port.approach.x,
+      y: port.approach.y,
+      prevX: port.approach.x,
+      prevY: port.approach.y,
+      stalledMs: 0,
+      ejecting: false,
+      ejectProgress: 1,
+    });
+    simulation.nextResourceId += 1;
+  }
+
+  for (let elapsed = 0; elapsed < 1000; elapsed += 50) {
+    updateSteamSimulation(simulation, 50, {
+      belts,
+      generators,
+      machines: [boiler],
+      lamp,
+    });
+  }
+
+  assert.deepEqual(boiler.storedResources, ["fire", "fire"]);
+  assert.equal(boiler.state, "normal");
+  assert.equal(simulation.resources.some((resource) => resource.type === "steam"), false);
+});
+
+test("ボイラーへ電気を入れると誤投入として故障する", () => {
+  const { lamp, generators } = createMission03Machines();
+  const boiler = createBoiler("wrong-boiler", 3, 6);
+  const inputCell = boiler.inputPorts[0].approach;
+  const belt = buildBeltsFromPath(
+    [inputCell],
+    null,
+    boiler.inputPorts[0].targetCell,
+  )[0];
+  const belts = beltMap([belt]);
+  const simulation = createSteamSimulationState();
+  simulation.resources.push({
+    id: simulation.nextResourceId,
+    type: "electricity",
+    x: inputCell.x,
+    y: inputCell.y,
+    prevX: inputCell.x,
+    prevY: inputCell.y,
+    stalledMs: 0,
+    ejecting: false,
+    ejectProgress: 1,
+  });
+
+  for (let elapsed = 0; elapsed < 2500; elapsed += 50) {
+    updateSteamSimulation(simulation, 50, {
+      belts,
+      generators,
+      machines: [boiler],
+      lamp,
+    });
+  }
+
+  assert.equal(boiler.failureType, "electricity");
+  assert.equal(boiler.state, "broken");
+  assert.equal(simulation.resources.length, 0);
 });

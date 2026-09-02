@@ -298,6 +298,7 @@ h1 {
 }
 
 .toolbar {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
@@ -319,6 +320,122 @@ h1 {
   position: absolute;
   top: 5px;
   right: 6px;
+}
+
+.facility-tool {
+  overflow: hidden;
+}
+
+.hold-mark {
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  color: rgba(225, 239, 244, 0.62);
+  font-size: 0.48rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.facility-tool.holding::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 2px solid transparent;
+  border-top-color: var(--cyan);
+  border-radius: 12px;
+  animation: hold-progress 520ms linear forwards;
+}
+
+.facility-picker {
+  position: absolute;
+  z-index: 12;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  padding: 9px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  border: 1px solid rgba(101, 226, 239, 0.28);
+  border-radius: 16px;
+  background: rgba(13, 19, 27, 0.97);
+  box-shadow: 0 15px 42px rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(12px);
+}
+
+.facility-picker > p {
+  grid-column: 1 / -1;
+  margin: 0 2px 2px;
+  color: #b9c7d0;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.facility-option {
+  min-width: 0;
+  min-height: 58px;
+  padding: 7px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: #1b2530;
+  color: #eef6f7;
+  text-align: left;
+}
+
+.facility-option.selected {
+  border-color: rgba(101, 226, 239, 0.65);
+  background: #20343d;
+}
+
+.facility-option > span:first-child {
+  font-size: 1.35rem;
+}
+
+.facility-option > span:nth-child(2) {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.facility-option strong {
+  font-size: 0.72rem;
+}
+
+.facility-option small {
+  color: #aab8c1;
+  font-size: 0.6rem;
+  white-space: nowrap;
+}
+
+.facility-option b {
+  min-width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(101, 226, 239, 0.13);
+  color: #baf6f8;
+  font-size: 0.66rem;
+}
+
+.facility-option:disabled {
+  opacity: 0.44;
+}
+
+.steam-mission .tool-button.active {
+  border-color: rgba(162, 231, 255, 0.62);
+  background: linear-gradient(180deg, #26343a, #1d282d);
+  color: #e5faff;
+  box-shadow: inset 0 0 0 1px rgba(126, 220, 255, 0.14);
+}
+
+@keyframes hold-progress {
+  from { transform: rotate(0deg); opacity: 0.25; }
+  to { transform: rotate(360deg); opacity: 1; }
 }
 
 .tool-button {

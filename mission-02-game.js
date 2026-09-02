@@ -62,7 +62,8 @@ pumpTool.hidden = false;
 toolbar.classList.add("four-tools");
 clearResourceIcon.textContent = "💧";
 clearTitle.textContent = "水を10個届けました！";
-nextMissionButton.hidden = true;
+nextMissionButton.hidden = false;
+nextMissionButton.textContent = "Mission 3へ";
 
 const { tank, generator } = createMission02Machines();
 const simulation = createWaterSimulationState();
@@ -626,6 +627,11 @@ pumpTool.addEventListener("click", () => setTool("pump"));
 removeTool.addEventListener("click", () => setTool("remove"));
 resetButton.addEventListener("click", resetMission);
 replayButton.addEventListener("click", resetMission);
+nextMissionButton.addEventListener("click", () => {
+  const url = new URL(window.location.href);
+  url.searchParams.set("mission", "3");
+  window.location.assign(url);
+});
 pauseButton.addEventListener("click", () => setPaused(!paused));
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && !paused && !cleared) {

@@ -64,6 +64,33 @@
           <span>ポンプ</span>
           <strong id="pump-count" class="tool-count">2</strong>
         </button>
+        <button
+          id="facility-tool"
+          class="tool-button facility-tool"
+          type="button"
+          aria-pressed="false"
+          aria-haspopup="menu"
+          aria-expanded="false"
+          hidden
+        >
+          <span id="facility-tool-icon" class="tool-icon" aria-hidden="true">♨️</span>
+          <span id="facility-tool-label">ボイラー</span>
+          <strong id="facility-tool-count" class="tool-count">1</strong>
+          <span class="hold-mark" aria-hidden="true">長押し</span>
+        </button>
+        <div id="facility-picker" class="facility-picker" role="menu" aria-label="設置する施設" hidden>
+          <p>設置する施設を選択</p>
+          <button class="facility-option" type="button" role="menuitem" data-facility="boiler">
+            <span aria-hidden="true">♨️</span>
+            <span><strong>ボイラー</strong><small>🔥＋💧 → ☁️</small></span>
+            <b id="boiler-count">1</b>
+          </button>
+          <button class="facility-option" type="button" role="menuitem" data-facility="turbine">
+            <span aria-hidden="true">🌀</span>
+            <span><strong>タービン</strong><small>☁️ → ⚡</small></span>
+            <b id="turbine-count">1</b>
+          </button>
+        </div>
         <button id="remove-tool" class="tool-button" type="button" aria-pressed="false">
           <span class="tool-icon" aria-hidden="true">🔨</span>
           <span>撤去</span>
@@ -75,6 +102,6 @@
       </nav>
     </main>
 
-    <script type="module" src="./main.js?v=10"></script>
+    <script type="module" src="./main.js?v=11"></script>
   </body>
 </html>
