@@ -1,6 +1,7 @@
 import { GRID } from "./src/content/mission-01.js";
 import {
   MISSION_03_INVENTORY,
+  MISSION_03_TARGET,
   createBoiler,
   createMission03Machines,
   createTurbine,
@@ -70,11 +71,11 @@ cleanupCount.textContent = MAX_CLEANUPS;
 facilityTool.hidden = false;
 toolbar.classList.add("four-tools");
 clearResourceIcon.textContent = "💡";
-clearTitle.textContent = "ランプが点灯しました！";
-clearDetail.textContent = "火と水から作った電気がランプへ届きました。";
+clearTitle.textContent = `電気を${MISSION_03_TARGET}個届けました！`;
+clearDetail.textContent = "火と水から作った電気でランプを点灯し続けました。";
 nextMissionButton.hidden = true;
 deliveredCount.textContent = "0";
-document.querySelector(".stat-fire span:last-child").textContent = "/1";
+document.querySelector(".stat-fire span:last-child").textContent = `/${MISSION_03_TARGET}`;
 
 const { lamp, generators } = createMission03Machines();
 const simulation = createSteamSimulationState();
@@ -660,7 +661,7 @@ function completeMission() {
   deliveredCount.textContent = lamp.target;
   updatePauseUI();
   const used = MAX_CLEANUPS - cleanupUses;
-  clearDetail.textContent = "火と水から作った電気がランプへ届きました。";
+  clearDetail.textContent = "火と水から作った電気でランプを点灯し続けました。";
   if (used > 0) clearDetail.textContent += ` 撤去は${used}回使用しました。`;
   clearPanel.hidden = false;
 }
@@ -713,7 +714,7 @@ const simulationCallbacks = {
     updateGuide();
   },
   onDelivery(machine, resource) {
-    deliveredCount.textContent = machine.target;
+    deliveredCount.textContent = machine.received;
     renderer.emitEvent("delivery", { lamp: machine, resource });
   },
   onFailureStart(belt, failureType) {

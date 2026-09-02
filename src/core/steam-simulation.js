@@ -164,10 +164,10 @@ function stallResource(resource) {
 }
 
 function completeLamp(state, lamp, resource, callbacks) {
-  lamp.received = lamp.target;
+  lamp.received = Math.min(lamp.target, lamp.received + 1);
   lamp.counterPulseMs = 420;
   callbacks.onDelivery?.(lamp, resource);
-  if (!state.completed) {
+  if (!state.completed && lamp.received >= lamp.target) {
     state.completed = true;
     callbacks.onComplete?.();
   }

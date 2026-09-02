@@ -428,10 +428,10 @@ test("火と水をボイラーとタービンで電気に変換し、ランプ�
     });
   }
 
-  assert.equal(lamp.received, 1);
+  assert.equal(lamp.received, 10);
   assert.equal(simulation.completed, true);
-  assert.ok(steamOutputs >= 1);
-  assert.ok(electricOutputs >= 1);
+  assert.ok(steamOutputs >= 10);
+  assert.ok(electricOutputs >= 10);
   assert.equal(completions, 1);
 });
 

@@ -820,7 +820,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
     };
     const lampX = -lampWidth / 2;
     const lampY = -lampHeight / 2;
-    const lit = lamp.received >= lamp.target;
+    const lit = lamp.received > 0;
     const counterPulse = Math.min(1, lamp.counterPulseMs / 420);
     const zoomProgress = furnaceZoom.remainingMs > 0
       ? 1 - furnaceZoom.remainingMs / furnaceZoom.durationMs
@@ -856,7 +856,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
     furnaceCounter
       .setVisible(true)
       .setPosition(lampCenter.x, lampCenter.y + layout.cell * 0.53 * lampScale)
-      .setText(lit ? "⚡ 点灯" : "⚡ 0/1")
+      .setText(`⚡ ${lamp.received}/${lamp.target}`)
       .setFontSize(Math.max(9, Math.round(layout.cell * 0.2)))
       .setScale((1 + counterPulse * 0.09) * lampScale)
       .setColor(lit ? "#ffe693" : "#eef4f6");

@@ -1,4 +1,4 @@
-export const MISSION_03_TARGET = 1;
+export const MISSION_03_TARGET = 10;
 
 export const MISSION_03_INVENTORY = {
   boiler: 1,
