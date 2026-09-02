@@ -412,8 +412,45 @@ test("ボイラーは火を2個受け入れても壊れず、詰まったまま�
   }
 
   assert.deepEqual(boiler.storedResources, ["fire", "fire"]);
+  assert.deepEqual(boiler.storedSlots, ["fire", "fire"]);
   assert.equal(boiler.state, "normal");
   assert.equal(simulation.resources.some((resource) => resource.type === "steam"), false);
+});
+
+test("ボイラーの各素材は入ってきた入力ブロックに保持される", () => {
+  const { lamp, generators } = createMission03Machines();
+  const boiler = createBoiler("port-boiler", 3, 6);
+  const leftInput = boiler.inputPorts[0].approach;
+  const leftBelt = buildBeltsFromPath(
+    [leftInput],
+    null,
+    boiler.inputPorts[0].targetCell,
+  )[0];
+  const belts = beltMap([leftBelt]);
+  const simulation = createSteamSimulationState();
+  simulation.resources.push({
+    id: simulation.nextResourceId,
+    type: "fire",
+    x: leftInput.x,
+    y: leftInput.y,
+    prevX: leftInput.x,
+    prevY: leftInput.y,
+    stalledMs: 0,
+    ejecting: false,
+    ejectProgress: 1,
+  });
+
+  for (let elapsed = 0; elapsed < 400; elapsed += 50) {
+    updateSteamSimulation(simulation, 50, {
+      belts,
+      generators,
+      machines: [boiler],
+      lamp,
+    });
+  }
+
+  assert.deepEqual(boiler.storedSlots, ["fire", null]);
+  assert.deepEqual(boiler.storedResources, ["fire"]);
 });
 
 test("ボイラーへ電気を入れると誤投入として故障する", () => {

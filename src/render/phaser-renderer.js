@@ -778,6 +778,7 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       if (activeIds.has(pumpId)) continue;
       view.icon.destroy();
       view.label.destroy();
+      for (const slot of view.slots || []) slot.destroy();
       pumpViews.delete(pumpId);
     }
   }
@@ -1034,25 +1035,46 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
             fontFamily: "Inter, Hiragino Sans, Yu Gothic UI, sans-serif",
             fontStyle: "bold",
           }).setOrigin(0.5).setDepth(24),
+          slots: machine.inputPorts.map(() => (
+            scene.add.text(0, 0, "", { fontFamily: "sans-serif" })
+              .setOrigin(0.5).setDepth(25)
+          )),
         };
         pumpViews.set(machine.id, view);
       }
-      const stored = machine.storedResources.map(resourceIcon).join("");
       const icon = broken
         ? "💀"
-        : failing ? resourceIcon(machine.failureType) : stored || (machine.type === "boiler" ? "♨️" : "🌀");
-      const centerX = layout.left + (machine.x + (machine.type === "boiler" ? 0.72 : 0.5)) * layout.cell;
-      const centerY = layout.top + (machine.y + (machine.type === "boiler" ? 1.02 : 0.76)) * layout.cell;
+        : failing ? resourceIcon(machine.failureType) : machine.type === "boiler" ? "♨️" : "🌀";
+      const centerX = cellCenter(machine.x, machine.y).x;
+      const centerY = cellCenter(machine.x, machine.y).y;
       view.icon
         .setText(icon)
-        .setPosition(centerX, centerY - layout.cell * 0.13)
-        .setFontSize(Math.max(14, Math.round(layout.cell * (stored.length > 2 ? 0.34 : 0.43))))
+        .setPosition(centerX, centerY - layout.cell * 0.12)
+        .setFontSize(Math.max(14, Math.round(layout.cell * 0.42)))
         .setScale(failing ? 1 + Math.sin(visualTime / 80) * 0.1 : 1 + pulse * 0.12 + outputPulse * 0.1);
       view.label
         .setText(broken ? "故障" : failing ? "故障中" : machine.label)
         .setColor(broken ? "#9a9a9a" : failing ? "#ffd1c4" : "#dfe8ec")
         .setPosition(centerX, centerY + layout.cell * 0.25)
         .setFontSize(Math.max(7, Math.round(layout.cell * 0.15)));
+      for (let index = 0; index < view.slots.length; index += 1) {
+        const slot = view.slots[index];
+        const targetCell = machine.inputPorts[index].targetCell;
+        const storedType = machine.storedSlots[index];
+        const slotCenter = cellCenter(targetCell.x, targetCell.y);
+        slot
+          .setVisible(!broken && Boolean(storedType))
+          .setText(storedType ? resourceIcon(storedType) : "")
+          .setPosition(slotCenter.x, slotCenter.y)
+          .setFontSize(Math.max(16, Math.round(layout.cell * 0.46)))
+          .setScale(1 + pulse * 0.15);
+        if (storedType) {
+          const shadow = storedType === "fire"
+            ? "#ff5e14"
+            : storedType === "water" ? "#65e2ef" : storedType === "steam" ? "#d8f5f8" : "#ffe06b";
+          slot.setShadow(0, 0, shadow, 9, true, true);
+        }
+      }
     }
     clearPumpViews(activeMachineIds);
   }

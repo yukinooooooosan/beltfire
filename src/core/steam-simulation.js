@@ -99,9 +99,13 @@ function updateEjections(state, deltaMs) {
 
 function machineAcceptingAt(x, y, direction, machines) {
   if (direction !== "U") return null;
-  return machines.find((machine) => machine.inputPorts.some((port) => (
-    port.approach.x === x && port.approach.y === y
-  ))) || null;
+  for (const machine of machines) {
+    const portIndex = machine.inputPorts.findIndex((port) => (
+      port.approach.x === x && port.approach.y === y
+    ));
+    if (portIndex >= 0) return { machine, portIndex };
+  }
+  return null;
 }
 
 function lampAcceptsAt(x, y, direction, lamp) {
@@ -111,15 +115,16 @@ function lampAcceptsAt(x, y, direction, lamp) {
 }
 
 function hasBoilerRecipe(machine) {
+  const stored = machine.storedSlots.filter(Boolean);
   return machine.type === "boiler"
-    && machine.storedResources.length === 2
-    && machine.storedResources.includes("fire")
-    && machine.storedResources.includes("water");
+    && stored.length === 2
+    && stored.includes("fire")
+    && stored.includes("water");
 }
 
 function machineOutputType(machine) {
   if (hasBoilerRecipe(machine)) return "steam";
-  if (machine.type === "turbine" && machine.storedResources[0] === "steam") {
+  if (machine.type === "turbine" && machine.storedSlots[0] === "steam") {
     return "electricity";
   }
   return null;
@@ -134,6 +139,7 @@ function tryMachineOutputs(state, belts, machines, callbacks) {
     const outputBelt = belts.get(key(x, y));
     if (!outputBelt || outputBelt.state !== "normal" || cellHasResource(state, x, y)) continue;
 
+    machine.storedSlots.fill(null);
     machine.storedResources = [];
     machine.outputPulseMs = 320;
     const output = createResource(
@@ -183,9 +189,10 @@ function moveResources(state, belts, machines, lamp, callbacks) {
       continue;
     }
 
-    const machine = machineAcceptingAt(resource.x, resource.y, belt.outDir, machines);
-    if (machine) {
-      if (machine.state !== "normal" || machine.storedResources.length >= machine.capacity) {
+    const input = machineAcceptingAt(resource.x, resource.y, belt.outDir, machines);
+    if (input) {
+      const { machine, portIndex } = input;
+      if (machine.state !== "normal" || machine.storedSlots[portIndex] !== null) {
         stallResource(resource);
         continue;
       }
@@ -193,11 +200,14 @@ function moveResources(state, belts, machines, lamp, callbacks) {
       occupied.delete(key(resource.x, resource.y));
       consumedIndexes.add(index);
       if (machine.acceptedResourceTypes.includes(resource.type)) {
-        machine.storedResources.push(resource.type);
+        machine.storedSlots[portIndex] = resource.type;
+        machine.storedResources = machine.storedSlots.filter(Boolean);
         machine.inputPulseMs = 320;
-        callbacks.onMachineInput?.(machine, resource);
+        callbacks.onMachineInput?.(machine, resource, portIndex);
       } else {
-        machine.storedResources = [];
+        machine.storedSlots[portIndex] = resource.type;
+        machine.storedResources = machine.storedSlots.filter(Boolean);
+        machine.containedPortIndex = portIndex;
         beginMachineFailure(machine, resource, callbacks);
       }
       continue;
