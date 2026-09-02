@@ -971,18 +971,29 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       activeMachineIds.add(machine.id);
       const failing = machine.state === "failing";
       const broken = machine.state === "broken";
+      const contaminated = machine.state === "normal" && Boolean(machine.contaminationType);
+      const contaminationDanger = contaminated
+        ? Phaser.Math.Clamp(
+          (machine.contaminationMs - FAILURE_TIMING.warningMs)
+            / (FAILURE_TIMING.triggerMs - FAILURE_TIMING.warningMs),
+          0,
+          1,
+        )
+        : 0;
       const pulse = Math.min(1, machine.inputPulseMs / 320);
       const outputPulse = Math.min(1, machine.outputPulseMs / 320);
       const accent = machine.type === "boiler" ? COLORS.orange : 0xbfeaf2;
-      const failureColor = resourceColor(machine.failureType);
+      const failureColor = resourceColor(machine.failureType || machine.contaminationType);
 
       for (const cell of machine.cells) {
         const x = layout.left + cell.x * layout.cell + 2;
         const y = layout.top + cell.y * layout.cell + 2;
         const size = layout.cell - 4;
         machineGraphics.fillStyle(
-          broken ? COLORS.ashEdge : failing ? failureColor : accent,
-          failing ? 0.12 + Math.sin(visualTime / 90) * 0.04 : 0.04 + pulse * 0.1,
+          broken ? COLORS.ashEdge : failing || contaminationDanger > 0 ? failureColor : accent,
+          failing
+            ? 0.12 + Math.sin(visualTime / 90) * 0.04
+            : 0.04 + pulse * 0.1 + contaminationDanger * 0.09,
         );
         machineGraphics.fillRoundedRect(
           x - layout.cell * 0.05,
@@ -998,10 +1009,31 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         machineGraphics.fillRoundedRect(x, y, size, size, layout.cell * 0.12);
         machineGraphics.lineStyle(
           2,
-          broken ? COLORS.ashEdge : failing ? failureColor : machine.type === "boiler" ? 0x9a7658 : 0x7596a1,
+          broken
+            ? COLORS.ashEdge
+            : failing || contaminationDanger > 0
+              ? failureColor
+              : machine.type === "boiler" ? 0x9a7658 : 0x7596a1,
           1,
         );
         machineGraphics.strokeRoundedRect(x, y, size, size, layout.cell * 0.12);
+      }
+
+      if (contaminationDanger > 0 && machine.contaminationPortIndex !== null) {
+        const contaminatedCell = machine.inputPorts[machine.contaminationPortIndex].targetCell;
+        const warningCenter = cellCenter(contaminatedCell.x, contaminatedCell.y);
+        machineGraphics.lineStyle(
+          Math.max(2, layout.cell * 0.055),
+          failureColor,
+          0.38 + contaminationDanger * 0.5 + Math.sin(visualTime / 85) * 0.08,
+        );
+        machineGraphics.strokeRoundedRect(
+          warningCenter.x - layout.cell * 0.45,
+          warningCenter.y - layout.cell * 0.45,
+          layout.cell * 0.9,
+          layout.cell * 0.9,
+          layout.cell * 0.14,
+        );
       }
 
       for (const port of machine.inputPorts) {
@@ -1053,8 +1085,16 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         .setFontSize(Math.max(14, Math.round(layout.cell * 0.42)))
         .setScale(failing ? 1 + Math.sin(visualTime / 80) * 0.1 : 1 + pulse * 0.12 + outputPulse * 0.1);
       view.label
-        .setText(broken ? "故障" : failing ? "故障中" : machine.label)
-        .setColor(broken ? "#9a9a9a" : failing ? "#ffd1c4" : "#dfe8ec")
+        .setText(
+          broken
+            ? "故障"
+            : failing ? "故障中" : contaminationDanger > 0 ? "異物滞留" : machine.label,
+        )
+        .setColor(
+          broken
+            ? "#9a9a9a"
+            : failing || contaminationDanger > 0 ? "#ffd1c4" : "#dfe8ec",
+        )
         .setPosition(centerX, centerY + layout.cell * 0.25)
         .setFontSize(Math.max(7, Math.round(layout.cell * 0.15)));
       for (let index = 0; index < view.slots.length; index += 1) {
@@ -1067,7 +1107,10 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
           .setText(storedType ? resourceIcon(storedType) : "")
           .setPosition(slotCenter.x, slotCenter.y)
           .setFontSize(Math.max(16, Math.round(layout.cell * 0.46)))
-          .setScale(1 + pulse * 0.15);
+          .setScale(
+            1 + pulse * 0.15
+              + (index === machine.contaminationPortIndex ? contaminationDanger * 0.1 : 0),
+          );
         if (storedType) {
           const shadow = storedType === "fire"
             ? "#ff5e14"
@@ -1258,13 +1301,27 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       const charged = pump.storedElectricity > 0;
       const failing = pump.state === "failing";
       const broken = pump.state === "broken";
-      const failureColor = pump.failureType === "electricity"
+      const contaminated = pump.state === "normal" && Boolean(pump.contaminationType);
+      const contaminationDanger = contaminated
+        ? Phaser.Math.Clamp(
+          (pump.contaminationMs - FAILURE_TIMING.warningMs)
+            / (FAILURE_TIMING.triggerMs - FAILURE_TIMING.warningMs),
+          0,
+          1,
+        )
+        : 0;
+      const activeFailureType = pump.failureType || pump.contaminationType;
+      const failureColor = activeFailureType === "electricity"
         ? 0xffdc63
-        : pump.failureType === "water" ? COLORS.cyan : COLORS.danger;
+        : activeFailureType === "water" ? COLORS.cyan : activeFailureType === "steam" ? 0xcceef5 : COLORS.danger;
 
       machineGraphics.fillStyle(
-        broken ? COLORS.ashEdge : failing ? failureColor : charged ? 0xffd65b : COLORS.cyan,
-        failing ? 0.12 + Math.sin(visualTime / 90) * 0.04 : 0.04 + chargePulse * 0.12,
+        broken
+          ? COLORS.ashEdge
+          : failing || contaminationDanger > 0 ? failureColor : charged ? 0xffd65b : COLORS.cyan,
+        failing
+          ? 0.12 + Math.sin(visualTime / 90) * 0.04
+          : 0.04 + chargePulse * 0.12 + contaminationDanger * 0.09,
       );
       machineGraphics.fillRoundedRect(
         x - layout.cell * 0.06,
@@ -1289,6 +1346,21 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         1,
       );
       machineGraphics.strokeRoundedRect(x, y, width, height, layout.cell * 0.14);
+      if (contaminationDanger > 0) {
+        const inputCenter = cellCenter(pump.x, pump.y + pump.h - 1);
+        machineGraphics.lineStyle(
+          Math.max(2, layout.cell * 0.055),
+          failureColor,
+          0.38 + contaminationDanger * 0.5 + Math.sin(visualTime / 85) * 0.08,
+        );
+        machineGraphics.strokeRoundedRect(
+          inputCenter.x - layout.cell * 0.43,
+          inputCenter.y - layout.cell * 0.43,
+          layout.cell * 0.86,
+          layout.cell * 0.86,
+          layout.cell * 0.13,
+        );
+      }
       machineGraphics.fillStyle(
         broken ? 0x282a2e : failing ? failureColor : charged ? 0xffd65b : 0x17232b,
         charged || failing ? 0.86 : 0.9,
@@ -1325,6 +1397,10 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
             fontFamily: "Inter, Hiragino Sans, Yu Gothic UI, sans-serif",
             fontStyle: "bold",
           }).setOrigin(0.5).setDepth(24),
+          slots: [
+            scene.add.text(0, 0, "", { fontFamily: "sans-serif" })
+              .setOrigin(0.5).setDepth(25),
+          ],
         };
         pumpViews.set(pump.id, view);
       }
@@ -1333,10 +1409,10 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
         : pump.failureType === "water" ? "💧" : "🔥";
       const icon = broken
         ? "💀"
-        : failing ? failureIcon : charged ? "⚡" : outputPulse > 0 ? "💧" : "⚙️";
+        : failing ? failureIcon : outputPulse > 0 ? "💧" : "⚙️";
       view.icon
         .setText(icon)
-        .setPosition(x + width / 2, y + height * 0.36)
+        .setPosition(cellCenter(pump.x, pump.y).x, cellCenter(pump.x, pump.y).y - layout.cell * 0.1)
         .setFontSize(Math.max(15, Math.round(layout.cell * 0.42)))
         .setScale(
           failing
@@ -1344,10 +1420,32 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
             : 1 + chargePulse * 0.16 + outputPulse * 0.1,
         );
       view.label
-        .setText(broken ? "故障" : failing ? "故障中" : "ポンプ")
-        .setColor(broken ? "#9a9a9a" : failing ? "#ffd1c4" : "#dfe8ec")
-        .setPosition(x + width / 2, y + height * 0.78)
+        .setText(
+          broken
+            ? "故障"
+            : failing ? "故障中" : contaminationDanger > 0 ? "異物滞留" : "ポンプ",
+        )
+        .setColor(
+          broken
+            ? "#9a9a9a"
+            : failing || contaminationDanger > 0 ? "#ffd1c4" : "#dfe8ec",
+        )
+        .setPosition(cellCenter(pump.x, pump.y).x, cellCenter(pump.x, pump.y).y + layout.cell * 0.25)
         .setFontSize(Math.max(7, Math.round(layout.cell * 0.16)));
+      const storedType = pump.contaminationType || (charged ? "electricity" : null);
+      const storedCenter = cellCenter(pump.x, pump.y + pump.h - 1);
+      view.slots[0]
+        .setVisible(!broken && Boolean(storedType))
+        .setText(storedType ? resourceIcon(storedType) : "")
+        .setPosition(storedCenter.x, storedCenter.y)
+        .setFontSize(Math.max(16, Math.round(layout.cell * 0.46)))
+        .setScale(1 + chargePulse * 0.15 + contaminationDanger * 0.1);
+      if (storedType) {
+        const storedShadow = storedType === "fire"
+          ? "#ff5e14"
+          : storedType === "water" ? "#65e2ef" : storedType === "steam" ? "#d8f5f8" : "#ffe06b";
+        view.slots[0].setShadow(0, 0, storedShadow, 9, true, true);
+      }
     }
     clearPumpViews(activePumpIds);
   }
@@ -1574,6 +1672,27 @@ export function createPhaserRenderer({ canvas, boardWrap }) {
       metalEmitter?.explode(9, position.x, position.y);
       demolitionSparkEmitter?.explode(5, position.x, position.y);
       playTone(190, 150, { endFrequency: 88, volume: 0.03, type: "triangle" });
+      return;
+    }
+    if (type === "machine-contamination") {
+      const failureType = payload.failureType || payload.resource?.type || "unknown";
+      if (failureType === "water" || failureType === "steam") {
+        waterEmitter?.explode(8, position.x, position.y);
+      } else {
+        sparkEmitter?.explode(8, position.x, position.y);
+      }
+      playTone(230, 120, { endFrequency: 170, volume: 0.018, type: "triangle" });
+      return;
+    }
+    if (type === "machine-contamination-warning") {
+      const failureType = payload.failureType || "unknown";
+      if (failureType === "water" || failureType === "steam") {
+        waterEmitter?.explode(12, position.x, position.y);
+      } else {
+        sparkEmitter?.explode(13, position.x, position.y);
+      }
+      smokeEmitter?.explode(4, position.x, position.y);
+      playTone(430, 190, { endFrequency: 180, volume: 0.028, type: "square" });
       return;
     }
     if (type === "machine-failure-start") {

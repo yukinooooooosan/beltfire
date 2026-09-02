@@ -224,7 +224,7 @@ test("行き止まりで滞留した水も共通ルールでベルトを故障�
   assert.equal([...belts.values()][0].state, "broken");
 });
 
-test("空のポンプは火も受け入れ、誤投入として💀故障する", () => {
+test("空のポンプは火も取り込み、警告時間を経て💀故障する", () => {
   const { tank, generator } = createMission02Machines();
   const pump = createPump("wrong-input-pump", generator.x, 6);
   const inputCell = { x: pump.x, y: pump.y + pump.h };
@@ -255,6 +255,12 @@ test("空のポンプは火も受け入れ、誤投入として💀故障する"
       pumps: [pump],
       tank,
       callbacks: {
+        onMachineContamination(machine, resource) {
+          machineEvents.push(`stored:${machine.id}:${resource.type}`);
+        },
+        onMachineContaminationWarning(machine, failureType) {
+          machineEvents.push(`warning:${machine.id}:${failureType}`);
+        },
         onMachineFailureStart(machine, resource) {
           machineEvents.push(`start:${machine.id}:${resource.type}`);
         },
@@ -267,10 +273,44 @@ test("空のポンプは火も受け入れ、誤投入として💀故障する"
 
   assert.equal(simulation.resources.length, 0);
   assert.equal(pump.storedElectricity, 0);
+  assert.equal(pump.contaminationType, "fire");
+  assert.equal(pump.contaminationWarning, true);
+  assert.equal(pump.failureType, null);
+  assert.equal(pump.state, "normal");
+  assert.deepEqual(machineEvents, [
+    "stored:wrong-input-pump:fire",
+    "warning:wrong-input-pump:fire",
+  ]);
+
+  for (let elapsed = 0; elapsed < 3000; elapsed += 50) {
+    updateWaterSimulation(simulation, 50, {
+      belts,
+      generator,
+      pumps: [pump],
+      tank,
+      callbacks: {
+        onMachineContamination(machine, resource) {
+          machineEvents.push(`stored:${machine.id}:${resource.type}`);
+        },
+        onMachineContaminationWarning(machine, failureType) {
+          machineEvents.push(`warning:${machine.id}:${failureType}`);
+        },
+        onMachineFailureStart(machine, resource) {
+          machineEvents.push(`start:${machine.id}:${resource.type}`);
+        },
+        onMachineBroken(machine, failureType) {
+          machineEvents.push(`broken:${machine.id}:${failureType}`);
+        },
+      },
+    });
+  }
+
   assert.equal(pump.failureType, "fire");
   assert.equal(pump.containedResourceType, "fire");
   assert.equal(pump.state, "broken");
   assert.deepEqual(machineEvents, [
+    "stored:wrong-input-pump:fire",
+    "warning:wrong-input-pump:fire",
     "start:wrong-input-pump:fire",
     "broken:wrong-input-pump:fire",
   ]);
@@ -453,7 +493,7 @@ test("ボイラーの各素材は入ってきた入力ブロックに保持さ�
   assert.deepEqual(boiler.storedResources, ["fire"]);
 });
 
-test("ボイラーへ電気を入れると誤投入として故障する", () => {
+test("ボイラーは電気を入力ブロックへ取り込み、警告時間を経て故障する", () => {
   const { lamp, generators } = createMission03Machines();
   const boiler = createBoiler("wrong-boiler", 3, 6);
   const inputCell = boiler.inputPorts[0].approach;
@@ -477,6 +517,22 @@ test("ボイラーへ電気を入れると誤投入として故障する", () =>
   });
 
   for (let elapsed = 0; elapsed < 2500; elapsed += 50) {
+    updateSteamSimulation(simulation, 50, {
+      belts,
+      generators,
+      machines: [boiler],
+      lamp,
+    });
+  }
+
+  assert.deepEqual(boiler.storedSlots, ["electricity", null]);
+  assert.equal(boiler.contaminationType, "electricity");
+  assert.equal(boiler.contaminationWarning, true);
+  assert.equal(boiler.failureType, null);
+  assert.equal(boiler.state, "normal");
+  assert.equal(simulation.resources.length, 0);
+
+  for (let elapsed = 0; elapsed < 3500; elapsed += 50) {
     updateSteamSimulation(simulation, 50, {
       belts,
       generators,

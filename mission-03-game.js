@@ -589,6 +589,9 @@ function updateGuide() {
   const hasBroken = [...belts.values()].some((belt) => belt.state === "broken");
   const hasFailingMachine = machines.some((machine) => machine.state === "failing");
   const hasBrokenMachine = machines.some((machine) => machine.state === "broken");
+  const contaminatedMachine = machines.find((machine) => (
+    machine.state === "normal" && machine.contaminationType
+  ));
   const jammedBoiler = machines.find((machine) => (
     machine.type === "boiler"
     && machine.storedResources.length === 2
@@ -603,6 +606,9 @@ function updateGuide() {
   } else if (hasBrokenMachine || hasBroken) {
     guideIcon.textContent = "🔨";
     guideText.textContent = "撤去ツールで、つながった💀設備とベルトを一括撤去できます";
+  } else if (contaminatedMachine) {
+    guideIcon.textContent = contaminatedMachine.contaminationWarning ? "🚨" : "⚠️";
+    guideText.textContent = `対応外の素材が${contaminatedMachine.label}の入力ブロック内で滞留中です`;
   } else if (hasFailing) {
     guideIcon.textContent = "🚨";
     guideText.textContent = "滞留した資源がベルトを故障させています";
@@ -725,7 +731,21 @@ const simulationCallbacks = {
       resource,
       failureType: resource.type,
     });
-    showToast(`${machine.label}へ対応していない素材が入り、故障しました！`);
+    showToast(`滞留した異物により、${machine.label}が故障し始めました！`);
+    updateGuide();
+  },
+  onMachineContamination(machine, resource) {
+    renderer.emitEvent("machine-contamination", {
+      machine,
+      resource,
+      failureType: resource.type,
+    });
+    showToast(`${machine.label}が対応外の素材を取り込みました`);
+    updateGuide();
+  },
+  onMachineContaminationWarning(machine, failureType) {
+    renderer.emitEvent("machine-contamination-warning", { machine, failureType });
+    showToast(`${machine.label}内の異物が危険な状態です！`);
     updateGuide();
   },
   onMachineBroken(machine, failureType) {

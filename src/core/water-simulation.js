@@ -1,11 +1,12 @@
 import { DIRS } from "../content/mission-01.js";
 import { MISSION_02_TIMING } from "../content/mission-02.js";
 import {
-  beginMachineFailure,
+  beginMachineContamination,
   removeResourcesOnFailedBelts,
   triggerStalledFailures,
   updateBeltFailures,
   updateMachineFailures,
+  updateMachineContaminations,
 } from "./failure.js";
 import { key } from "./grid.js";
 
@@ -144,7 +145,11 @@ function moveResources(state, belts, pumps, tank, callbacks) {
 
     const pump = pumpAcceptingAt(resource.x, resource.y, belt.outDir, pumps);
     if (pump) {
-      if (pump.state === "normal" && pump.storedElectricity < pump.capacity) {
+      if (
+        pump.state === "normal"
+        && !pump.contaminationType
+        && pump.storedElectricity < pump.capacity
+      ) {
         occupied.delete(key(resource.x, resource.y));
         consumedIndexes.add(index);
         if (resource.type === "electricity") {
@@ -153,7 +158,7 @@ function moveResources(state, belts, pumps, tank, callbacks) {
           callbacks.onPumpCharge?.(pump, resource);
         } else {
           pump.storedElectricity = 0;
-          beginMachineFailure(pump, resource, callbacks);
+          beginMachineContamination(pump, resource, callbacks, 0);
         }
       } else {
         resource.prevX = resource.x;
@@ -214,6 +219,7 @@ export function updateWaterSimulation(state, deltaMs, options) {
     pump.outputPulseMs = Math.max(0, pump.outputPulseMs - deltaMs);
   }
   updateMachineFailures(deltaMs, pumps, callbacks);
+  updateMachineContaminations(deltaMs, pumps, callbacks);
   for (let port = 0; port < 2; port += 1) {
     generator.portFlashMs[port] = Math.max(0, generator.portFlashMs[port] - deltaMs);
     state.spawnAccumulator[port] += deltaMs;

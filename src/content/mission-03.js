@@ -87,6 +87,10 @@ export function createBoiler(id, x, y) {
     failureType: null,
     failureMs: 0,
     containedResourceType: null,
+    contaminationType: null,
+    contaminationMs: 0,
+    contaminationWarning: false,
+    contaminationPortIndex: null,
     inputPulseMs: 0,
     outputPulseMs: 0,
   };
@@ -124,6 +128,10 @@ export function createTurbine(id, x, y) {
     failureType: null,
     failureMs: 0,
     containedResourceType: null,
+    contaminationType: null,
+    contaminationMs: 0,
+    contaminationWarning: false,
+    contaminationPortIndex: null,
     inputPulseMs: 0,
     outputPulseMs: 0,
   };

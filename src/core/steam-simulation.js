@@ -1,11 +1,12 @@
 import { DIRS } from "../content/mission-01.js";
 import { MISSION_03_TIMING } from "../content/mission-03.js";
 import {
-  beginMachineFailure,
+  beginMachineContamination,
   removeResourcesOnFailedBelts,
   triggerStalledFailures,
   updateBeltFailures,
   updateMachineFailures,
+  updateMachineContaminations,
 } from "./failure.js";
 import { key } from "./grid.js";
 
@@ -207,8 +208,7 @@ function moveResources(state, belts, machines, lamp, callbacks) {
       } else {
         machine.storedSlots[portIndex] = resource.type;
         machine.storedResources = machine.storedSlots.filter(Boolean);
-        machine.containedPortIndex = portIndex;
-        beginMachineFailure(machine, resource, callbacks);
+        beginMachineContamination(machine, resource, callbacks, portIndex);
       }
       continue;
     }
@@ -259,6 +259,7 @@ export function updateSteamSimulation(state, deltaMs, options) {
     machine.outputPulseMs = Math.max(0, machine.outputPulseMs - deltaMs);
   }
   updateMachineFailures(deltaMs, machines, callbacks);
+  updateMachineContaminations(deltaMs, machines, callbacks);
 
   for (const generator of generators) {
     for (let port = 0; port < 2; port += 1) {

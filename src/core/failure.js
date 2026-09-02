@@ -75,6 +75,42 @@ export function beginMachineFailure(machine, resource, callbacks = {}) {
   return true;
 }
 
+export function beginMachineContamination(
+  machine,
+  resource,
+  callbacks = {},
+  portIndex = null,
+) {
+  if (!machine || machine.state !== "normal" || machine.contaminationType) return false;
+  machine.contaminationType = resource.type || "unknown";
+  machine.contaminationMs = 0;
+  machine.contaminationWarning = false;
+  machine.contaminationPortIndex = portIndex;
+  machine.containedResourceType = machine.contaminationType;
+  callbacks.onMachineContamination?.(machine, resource, portIndex);
+  return true;
+}
+
+export function updateMachineContaminations(deltaMs, machines, callbacks = {}) {
+  for (const machine of machines) {
+    if (machine.state !== "normal" || !machine.contaminationType) continue;
+    machine.contaminationMs += deltaMs;
+    if (
+      !machine.contaminationWarning
+      && machine.contaminationMs >= FAILURE_TIMING.warningMs
+    ) {
+      machine.contaminationWarning = true;
+      callbacks.onMachineContaminationWarning?.(
+        machine,
+        machine.contaminationType,
+        machine.contaminationPortIndex,
+      );
+    }
+    if (machine.contaminationMs < FAILURE_TIMING.triggerMs) continue;
+    beginMachineFailure(machine, { type: machine.contaminationType }, callbacks);
+  }
+}
+
 export function updateMachineFailures(deltaMs, machines, callbacks = {}) {
   for (const machine of machines) {
     if (machine.state !== "failing") continue;

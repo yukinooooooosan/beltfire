@@ -446,6 +446,9 @@ function updateGuide() {
   const hasBroken = [...belts.values()].some((belt) => belt.state === "broken");
   const hasFailingMachine = pumps.some((pump) => pump.state === "failing");
   const hasBrokenMachine = pumps.some((pump) => pump.state === "broken");
+  const contaminatedPump = pumps.find((pump) => (
+    pump.state === "normal" && pump.contaminationType
+  ));
   const blockedPump = pumps.find((pump) => pump.storedElectricity > 0 && !pumpHasOutput(pump));
   if (hasFailingMachine) {
     guideIcon.textContent = "🚨";
@@ -453,6 +456,9 @@ function updateGuide() {
   } else if (hasBrokenMachine) {
     guideIcon.textContent = "🔨";
     guideText.textContent = "💀ポンプと接続された💀ベルトをまとめて撤去できます";
+  } else if (contaminatedPump) {
+    guideIcon.textContent = contaminatedPump.contaminationWarning ? "🚨" : "⚠️";
+    guideText.textContent = "対応外の素材がポンプ内部で滞留中です。時間が経つと故障します";
   } else if (hasFailing) {
     guideIcon.textContent = "⚡";
     guideText.textContent = "滞留した電気がショートしています。最後は💀になります";
@@ -577,7 +583,21 @@ const simulationCallbacks = {
       resource,
       failureType: resource.type,
     });
-    showToast(`${resource.type === "fire" ? "火" : "異物"}を取り込み、ポンプが故障しました！`);
+    showToast("滞留した異物により、ポンプが故障し始めました！");
+    updateGuide();
+  },
+  onMachineContamination(machine, resource) {
+    renderer.emitEvent("machine-contamination", {
+      machine,
+      resource,
+      failureType: resource.type,
+    });
+    showToast(`${resource.type === "fire" ? "火" : "異物"}をポンプ内部へ取り込みました`);
+    updateGuide();
+  },
+  onMachineContaminationWarning(machine, failureType) {
+    renderer.emitEvent("machine-contamination-warning", { machine, failureType });
+    showToast("ポンプ内部の異物が危険な状態です！");
     updateGuide();
   },
   onMachineBroken(machine, failureType) {

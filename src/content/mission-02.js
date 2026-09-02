@@ -45,6 +45,10 @@ export function createPump(id, x, y) {
     failureType: null,
     failureMs: 0,
     containedResourceType: null,
+    contaminationType: null,
+    contaminationMs: 0,
+    contaminationWarning: false,
+    contaminationPortIndex: null,
     connectionCells: [
       { x, y: y - 1 },
       { x, y: y + 2 },
